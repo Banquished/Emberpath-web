@@ -1,0 +1,34 @@
+/* Import after Tailwind v4 in the application stylesheet. */
+@import "./emberpath.tokens.css";
+
+@theme inline {
+  --color-background: var(--ep-semantic-background);
+  --color-surface: var(--ep-semantic-surface);
+  --color-surface-raised: var(--ep-semantic-surface-raised);
+  --color-surface-hover: var(--ep-semantic-surface-hover);
+  --color-border-subtle: var(--ep-semantic-border-subtle);
+  --color-border-control: var(--ep-semantic-border-control);
+  --color-text-primary: var(--ep-semantic-text-primary);
+  --color-text-secondary: var(--ep-semantic-text-secondary);
+  --color-primary: var(--ep-semantic-primary);
+  --color-primary-hover: var(--ep-semantic-primary-hover);
+  --color-primary-active: var(--ep-semantic-primary-active);
+  --color-primary-foreground: var(--ep-semantic-primary-foreground);
+  --color-selected: var(--ep-semantic-selected);
+  --color-selected-foreground: var(--ep-semantic-selected-foreground);
+  --color-focus-ring: var(--ep-semantic-focus-ring);
+  --color-focus-offset: var(--ep-semantic-focus-offset);
+  --color-disabled: var(--ep-semantic-disabled);
+  --color-disabled-foreground: var(--ep-semantic-disabled-foreground);
+  --color-success: var(--ep-semantic-success);
+  --color-error: var(--ep-semantic-error);
+  --color-error-surface: var(--ep-semantic-error-surface);
+  --color-warning: var(--ep-semantic-warning);
+  --color-info: var(--ep-semantic-info);
+  --color-chart-observation: var(--ep-semantic-chart-observation);
+  --color-chart-trend: var(--ep-semantic-chart-trend);
+  --color-chart-target: var(--ep-semantic-chart-target);
+  --color-chart-grid: var(--ep-semantic-chart-grid);
+  --color-chart-label: var(--ep-semantic-chart-label);
+}
+

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 280" role="img" aria-labelledby="emberpath-mark-mono-title emberpath-mark-mono-desc" color="#F5F5F4">
+  <title id="emberpath-mark-mono-title">Emberpath</title>
+  <desc id="emberpath-mark-mono-desc">Single-color ember symbol. Defaults to off-white. Override the root color when inlining.</desc>
+<g transform="translate(26 14)"><path fill="currentColor" fill-rule="evenodd" d="M107 0 C138 16 157 48 140 75 C124 100 66 121 48 151 C33 175 34 198 45 220 C16 207 -2 182 1 155 C5 124 41 99 71 74 C96 54 112 31 107 0 Z M163 64 C194 93 213 136 198 172 C185 205 137 233 98 253 C76 230 74 211 80 190 C86 164 108 149 135 129 C155 113 168 88 163 64 Z"/></g>
+</svg>

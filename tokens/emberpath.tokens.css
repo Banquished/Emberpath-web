@@ -1,0 +1,77 @@
+/* Emberpath: Onyx + Ember. Intentionally dark-only.
+ * Use semantic tokens in app code; component aliases provide stable hooks.
+ * Color-scheme sets native controls only; no layout or reset styles are included.
+ */
+:root {
+  color-scheme: dark;
+
+  /* Primitives */
+  --ep-primitive-onyx-950: #111113;
+  --ep-primitive-onyx-900: #1B1B1F;
+  --ep-primitive-onyx-800: #25252A;
+  --ep-primitive-onyx-700: #35353C;
+  --ep-primitive-onyx-500: #777780;
+  --ep-primitive-stone-300: #A8A8A3;
+  --ep-primitive-stone-50: #F5F5F4;
+  --ep-primitive-ink: #141414;
+  --ep-primitive-ember-300: #FFA366;
+  --ep-primitive-ember-400: #FF8A3D;
+  --ep-primitive-ember-500: #F0782E;
+  --ep-primitive-ember-950: #35251D;
+  --ep-primitive-sage-400: #7CC9A4;
+  --ep-primitive-rose-400: #FF8F96;
+  --ep-primitive-rose-950: #352126;
+  --ep-primitive-amber-300: #F2C879;
+  --ep-primitive-sky-300: #8DBDF7;
+  --ep-primitive-lavender-300: #B9A7EA;
+
+  /* Semantic roles */
+  --ep-semantic-background: var(--ep-primitive-onyx-950);
+  --ep-semantic-surface: var(--ep-primitive-onyx-900);
+  --ep-semantic-surface-raised: var(--ep-primitive-onyx-800);
+  --ep-semantic-surface-hover: var(--ep-primitive-onyx-700);
+  /* Decorative separators only; not a sufficient boundary for an interactive control. */
+  --ep-semantic-border-subtle: var(--ep-primitive-onyx-700);
+  /* Visible control boundary against background, surface and raised surfaces. */
+  --ep-semantic-border-control: var(--ep-primitive-onyx-500);
+  --ep-semantic-text-primary: var(--ep-primitive-stone-50);
+  --ep-semantic-text-secondary: var(--ep-primitive-stone-300);
+  --ep-semantic-primary: var(--ep-primitive-ember-400);
+  --ep-semantic-primary-hover: var(--ep-primitive-ember-300);
+  --ep-semantic-primary-active: var(--ep-primitive-ember-500);
+  /* Dark text on all orange primary-button states; never white. */
+  --ep-semantic-primary-foreground: var(--ep-primitive-ink);
+  --ep-semantic-selected: var(--ep-primitive-ember-950);
+  --ep-semantic-selected-foreground: var(--ep-primitive-ember-300);
+  --ep-semantic-focus-ring: var(--ep-primitive-ember-400);
+  --ep-semantic-focus-offset: var(--ep-primitive-onyx-950);
+  --ep-semantic-disabled: var(--ep-primitive-onyx-800);
+  /* Readable disabled labels; use the native disabled attribute and do not apply additional opacity. */
+  --ep-semantic-disabled-foreground: var(--ep-primitive-stone-300);
+  /* Successful actions, such as saving a measurement; not weight loss or gain. */
+  --ep-semantic-success: var(--ep-primitive-sage-400);
+  --ep-semantic-error: var(--ep-primitive-rose-400);
+  --ep-semantic-error-surface: var(--ep-primitive-rose-950);
+  --ep-semantic-warning: var(--ep-primitive-amber-300);
+  --ep-semantic-info: var(--ep-primitive-sky-300);
+  /* Raw measurements; use points in addition to color. */
+  --ep-semantic-chart-observation: var(--ep-primitive-stone-300);
+  /* Weight trend regardless of whether weight rises or falls. */
+  --ep-semantic-chart-trend: var(--ep-primitive-ember-400);
+  /* Target reference line; render dashed and label directly. */
+  --ep-semantic-chart-target: var(--ep-primitive-lavender-300);
+  --ep-semantic-chart-grid: var(--ep-primitive-onyx-700);
+  --ep-semantic-chart-label: var(--ep-primitive-stone-300);
+
+  /* Component aliases */
+  --ep-component-button-primary-background: var(--ep-semantic-primary);
+  --ep-component-button-primary-foreground: var(--ep-semantic-primary-foreground);
+  --ep-component-button-primary-hover: var(--ep-semantic-primary-hover);
+  --ep-component-button-primary-active: var(--ep-semantic-primary-active);
+  --ep-component-input-background: var(--ep-semantic-background);
+  --ep-component-input-border: var(--ep-semantic-border-control);
+  --ep-component-input-invalid-border: var(--ep-semantic-error);
+  --ep-component-card-background: var(--ep-semantic-surface);
+  --ep-component-card-border: var(--ep-semantic-border-subtle);
+}
+

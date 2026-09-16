@@ -1,0 +1,400 @@
+{
+  "$description": "Emberpath Onyx + Ember. Dark-only color tokens, using DTCG color objects and alias syntax. CSS names: --ep-<layer>-<name>.",
+  "primitive": {
+    "onyx-950": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.06666666666666667,
+          0.06666666666666667,
+          0.07450980392156863
+        ],
+        "alpha": 1,
+        "hex": "#111113"
+      }
+    },
+    "onyx-900": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.10588235294117647,
+          0.10588235294117647,
+          0.12156862745098039
+        ],
+        "alpha": 1,
+        "hex": "#1B1B1F"
+      }
+    },
+    "onyx-800": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.1450980392156863,
+          0.1450980392156863,
+          0.16470588235294117
+        ],
+        "alpha": 1,
+        "hex": "#25252A"
+      }
+    },
+    "onyx-700": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.20784313725490197,
+          0.20784313725490197,
+          0.23529411764705882
+        ],
+        "alpha": 1,
+        "hex": "#35353C"
+      }
+    },
+    "onyx-500": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.4666666666666667,
+          0.4666666666666667,
+          0.5019607843137255
+        ],
+        "alpha": 1,
+        "hex": "#777780"
+      }
+    },
+    "stone-300": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.6588235294117647,
+          0.6588235294117647,
+          0.6392156862745098
+        ],
+        "alpha": 1,
+        "hex": "#A8A8A3"
+      }
+    },
+    "stone-50": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.9607843137254902,
+          0.9607843137254902,
+          0.9568627450980393
+        ],
+        "alpha": 1,
+        "hex": "#F5F5F4"
+      }
+    },
+    "ink": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.0784313725490196,
+          0.0784313725490196,
+          0.0784313725490196
+        ],
+        "alpha": 1,
+        "hex": "#141414"
+      }
+    },
+    "ember-300": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          1,
+          0.6392156862745098,
+          0.4
+        ],
+        "alpha": 1,
+        "hex": "#FFA366"
+      }
+    },
+    "ember-400": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          1,
+          0.5411764705882353,
+          0.23921568627450981
+        ],
+        "alpha": 1,
+        "hex": "#FF8A3D"
+      }
+    },
+    "ember-500": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.9411764705882353,
+          0.47058823529411764,
+          0.1803921568627451
+        ],
+        "alpha": 1,
+        "hex": "#F0782E"
+      }
+    },
+    "ember-950": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.20784313725490197,
+          0.1450980392156863,
+          0.11372549019607843
+        ],
+        "alpha": 1,
+        "hex": "#35251D"
+      }
+    },
+    "sage-400": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.48627450980392156,
+          0.788235294117647,
+          0.6431372549019608
+        ],
+        "alpha": 1,
+        "hex": "#7CC9A4"
+      }
+    },
+    "rose-400": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          1,
+          0.5607843137254902,
+          0.5882352941176471
+        ],
+        "alpha": 1,
+        "hex": "#FF8F96"
+      }
+    },
+    "rose-950": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.20784313725490197,
+          0.12941176470588237,
+          0.14901960784313725
+        ],
+        "alpha": 1,
+        "hex": "#352126"
+      }
+    },
+    "amber-300": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.9490196078431372,
+          0.7843137254901961,
+          0.4745098039215686
+        ],
+        "alpha": 1,
+        "hex": "#F2C879"
+      }
+    },
+    "sky-300": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.5529411764705883,
+          0.7411764705882353,
+          0.9686274509803922
+        ],
+        "alpha": 1,
+        "hex": "#8DBDF7"
+      }
+    },
+    "lavender-300": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.7254901960784313,
+          0.6549019607843137,
+          0.9176470588235294
+        ],
+        "alpha": 1,
+        "hex": "#B9A7EA"
+      }
+    }
+  },
+  "semantic": {
+    "background": {
+      "$type": "color",
+      "$value": "{primitive.onyx-950}"
+    },
+    "surface": {
+      "$type": "color",
+      "$value": "{primitive.onyx-900}"
+    },
+    "surface-raised": {
+      "$type": "color",
+      "$value": "{primitive.onyx-800}"
+    },
+    "surface-hover": {
+      "$type": "color",
+      "$value": "{primitive.onyx-700}"
+    },
+    "border-subtle": {
+      "$type": "color",
+      "$value": "{primitive.onyx-700}",
+      "$description": "Decorative separators only; not a sufficient boundary for an interactive control."
+    },
+    "border-control": {
+      "$type": "color",
+      "$value": "{primitive.onyx-500}",
+      "$description": "Visible control boundary against background, surface and raised surfaces."
+    },
+    "text-primary": {
+      "$type": "color",
+      "$value": "{primitive.stone-50}"
+    },
+    "text-secondary": {
+      "$type": "color",
+      "$value": "{primitive.stone-300}"
+    },
+    "primary": {
+      "$type": "color",
+      "$value": "{primitive.ember-400}"
+    },
+    "primary-hover": {
+      "$type": "color",
+      "$value": "{primitive.ember-300}"
+    },
+    "primary-active": {
+      "$type": "color",
+      "$value": "{primitive.ember-500}"
+    },
+    "primary-foreground": {
+      "$type": "color",
+      "$value": "{primitive.ink}",
+      "$description": "Dark text on all orange primary-button states; never white."
+    },
+    "selected": {
+      "$type": "color",
+      "$value": "{primitive.ember-950}"
+    },
+    "selected-foreground": {
+      "$type": "color",
+      "$value": "{primitive.ember-300}"
+    },
+    "focus-ring": {
+      "$type": "color",
+      "$value": "{primitive.ember-400}"
+    },
+    "focus-offset": {
+      "$type": "color",
+      "$value": "{primitive.onyx-950}"
+    },
+    "disabled": {
+      "$type": "color",
+      "$value": "{primitive.onyx-800}"
+    },
+    "disabled-foreground": {
+      "$type": "color",
+      "$value": "{primitive.stone-300}",
+      "$description": "Readable disabled labels; use the native disabled attribute and do not apply additional opacity."
+    },
+    "success": {
+      "$type": "color",
+      "$value": "{primitive.sage-400}",
+      "$description": "Successful actions, such as saving a measurement; not weight loss or gain."
+    },
+    "error": {
+      "$type": "color",
+      "$value": "{primitive.rose-400}"
+    },
+    "error-surface": {
+      "$type": "color",
+      "$value": "{primitive.rose-950}"
+    },
+    "warning": {
+      "$type": "color",
+      "$value": "{primitive.amber-300}"
+    },
+    "info": {
+      "$type": "color",
+      "$value": "{primitive.sky-300}"
+    },
+    "chart-observation": {
+      "$type": "color",
+      "$value": "{primitive.stone-300}",
+      "$description": "Raw measurements; use points in addition to color."
+    },
+    "chart-trend": {
+      "$type": "color",
+      "$value": "{primitive.ember-400}",
+      "$description": "Weight trend regardless of whether weight rises or falls."
+    },
+    "chart-target": {
+      "$type": "color",
+      "$value": "{primitive.lavender-300}",
+      "$description": "Target reference line; render dashed and label directly."
+    },
+    "chart-grid": {
+      "$type": "color",
+      "$value": "{primitive.onyx-700}"
+    },
+    "chart-label": {
+      "$type": "color",
+      "$value": "{primitive.stone-300}"
+    }
+  },
+  "component": {
+    "button-primary-background": {
+      "$type": "color",
+      "$value": "{semantic.primary}"
+    },
+    "button-primary-foreground": {
+      "$type": "color",
+      "$value": "{semantic.primary-foreground}"
+    },
+    "button-primary-hover": {
+      "$type": "color",
+      "$value": "{semantic.primary-hover}"
+    },
+    "button-primary-active": {
+      "$type": "color",
+      "$value": "{semantic.primary-active}"
+    },
+    "input-background": {
+      "$type": "color",
+      "$value": "{semantic.background}"
+    },
+    "input-border": {
+      "$type": "color",
+      "$value": "{semantic.border-control}"
+    },
+    "input-invalid-border": {
+      "$type": "color",
+      "$value": "{semantic.error}"
+    },
+    "card-background": {
+      "$type": "color",
+      "$value": "{semantic.surface}"
+    },
+    "card-border": {
+      "$type": "color",
+      "$value": "{semantic.border-subtle}"
+    }
+  }
+}
+

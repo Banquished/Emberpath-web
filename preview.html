@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Emberpath — identity and color tokens</title>
+  <link rel="stylesheet" href="tokens/emberpath.tokens.css" />
+  <style>
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--ep-semantic-background); color:var(--ep-semantic-text-primary); font:16px/1.5 system-ui,sans-serif; }
+    main { max-width:1050px; margin:auto; padding:40px 24px 64px; }
+    header { display:flex; justify-content:space-between; align-items:center; gap:16px; border-bottom:1px solid var(--ep-semantic-border-subtle); padding-bottom:20px; }
+    header img { width:166px; height:auto; }
+    .muted { color:var(--ep-semantic-text-secondary); }
+    h1 { font-size:26px; font-weight:550; letter-spacing:-.6px; margin:40px 0 8px; }
+    h2 { font-size:18px; font-weight:550; margin:36px 0 16px; }
+    p { margin:0 0 20px; }
+    .hero { display:block; width:100%; height:auto; margin:20px 0 30px; }
+    .variants { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }
+    figure { margin:0; min-width:0; }
+    .sample { height:140px; display:flex; align-items:center; justify-content:center; background:var(--ep-semantic-surface); border-radius:12px; padding:20px; }
+    .sample.light { background:#F5F5F4; }
+    .sample img { max-height:90px; max-width:100%; }
+    figcaption { font-size:13px; margin-top:10px; color:var(--ep-semantic-text-secondary); }
+    .swatches { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:24px 16px; }
+    .swatch { height:60px; border-radius:8px; margin-bottom:8px; }
+    .swatches code { display:block; color:var(--ep-semantic-text-secondary); font-size:12px; }
+    .components { display:grid; grid-template-columns:1fr 1fr; gap:24px; margin-top:24px; }
+    .component { border:1px solid var(--ep-semantic-border-subtle); background:var(--ep-semantic-surface); padding:24px; border-radius:12px; }
+    label { display:block; margin-bottom:8px; }
+    input { width:100%; padding:12px; border:1px solid var(--ep-component-input-border); border-radius:8px; color:var(--ep-semantic-text-primary); background:var(--ep-component-input-background); font:inherit; }
+    button { font:600 15px/1.4 system-ui,sans-serif; border:0; border-radius:8px; padding:13px 20px; background:var(--ep-semantic-primary); color:var(--ep-semantic-primary-foreground); margin-top:16px; cursor:pointer; }
+    button:hover { background:var(--ep-semantic-primary-hover); }
+    button:active { background:var(--ep-semantic-primary-active); }
+    button:focus-visible,input:focus-visible { outline:2px solid var(--ep-semantic-focus-ring); outline-offset:3px; }
+    .saved { color:var(--ep-semantic-success); font-size:14px; margin-top:12px; }
+    .icon-row { display:flex; gap:24px; align-items:end; flex-wrap:wrap; }
+    .icon-row img { image-rendering:auto; }
+    footer { margin-top:40px; padding-top:20px; border-top:1px solid var(--ep-semantic-border-subtle); font-size:13px; }
+    @media(max-width:620px) { main { padding:24px 18px 40px; } .variants,.components { grid-template-columns:1fr; } .swatches { grid-template-columns:repeat(2,minmax(0,1fr)); } header { align-items:start; flex-direction:column; } }
+  </style>
+</head>
+<body>
+<main>
+  <header><img src="logos/emberpath-logo.svg" alt="Emberpath" /><span class="muted">Identity kit · Onyx / Ember</span></header>
+  <h1>A steady spark. A path forward.</h1>
+  <p class="muted">Logo assets and the dark color palette for the first weight-logging module.</p>
+  <img class="hero" src="logos/emberpath-logo-glow.svg" alt="Emberpath presentation logo with an orange flame, a winding path and soft glow" />
+  <div class="variants">
+    <figure><div class="sample"><img src="logos/emberpath-logo.svg" alt="Flat Emberpath logo on a dark surface" /></div><figcaption>Primary · dark surfaces</figcaption></figure>
+    <figure><div class="sample light"><img src="logos/emberpath-logo-on-light.svg" alt="Emberpath logo for light surfaces" /></div><figcaption>Light-surface variant</figcaption></figure>
+    <figure><div class="sample"><img src="logos/emberpath-mark-mono.svg" alt="Monochrome Emberpath symbol" /></div><figcaption>Monochrome symbol</figcaption></figure>
+  </div>
+  <h2>Color roles</h2>
+  <div class="swatches">
+    <div><div class="swatch" style="background:var(--ep-semantic-background);border:1px solid var(--ep-semantic-border-subtle)"></div>Background<code>#111113</code></div>
+    <div><div class="swatch" style="background:var(--ep-semantic-surface)"></div>Surface<code>#1B1B1F</code></div>
+    <div><div class="swatch" style="background:var(--ep-semantic-surface-raised)"></div>Raised surface<code>#25252A</code></div>
+    <div><div class="swatch" style="background:var(--ep-semantic-border-control)"></div>Control border<code>#777780</code></div>
+    <div><div class="swatch" style="background:var(--ep-semantic-text-primary)"></div>Primary text<code>#F5F5F4</code></div>
+    <div><div class="swatch" style="background:var(--ep-semantic-text-secondary)"></div>Secondary text<code>#A8A8A3</code></div>
+    <div><div class="swatch" style="background:var(--ep-semantic-primary)"></div>Primary / trend<code>#FF8A3D</code></div>
+    <div><div class="swatch" style="background:var(--ep-semantic-success)"></div>Successful action<code>#7CC9A4</code></div>
+  </div>
+  <h2>In context</h2>
+  <div class="components">
+    <form class="component" id="sample-form">
+      <label for="weight">Weight (kg)</label><input id="weight" type="number" step="0.1" min="1" max="999" value="82.4" required />
+      <button type="submit">Save entry</button><div id="sample-status" class="saved" role="status">Preview only · no data is stored</div>
+    </form>
+    <div class="component"><p class="muted">App icon and favicon</p><div class="icon-row"><img src="logos/emberpath-app-icon.svg" width="80" height="80" alt="80 pixel app icon" /><img src="logos/favicon.svg" width="32" height="32" alt="32 pixel favicon" /><img src="logos/favicon.svg" width="16" height="16" alt="16 pixel favicon" /></div></div>
+  </div>
+  <footer class="muted">SVG artwork uses native paths with no embedded bitmap or font dependency. Example weight values are illustrative.</footer>
+</main>
+<script>
+document.getElementById('sample-form').addEventListener('submit', function(event) {
+  event.preventDefault();
+  document.getElementById('sample-status').textContent = 'Preview: entry saved · no data is stored';
+});
+</script>
+</body>
+</html>
