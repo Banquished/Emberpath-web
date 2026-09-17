@@ -1,91 +1,93 @@
-# Emberpath brand kit
+# Emberpath Web
 
-Onyx and warm ember orange. Prepared for the React + TypeScript weight-logging MVP.
+The mobile-friendly frontend for Emberpath, starting with a weight journal.
 
-## Included
+This first step is an application shell: navigation, the approved Onyx/Ember identity, an empty weight page and a shared provider setup. Weight entry forms, charts, backend calls, authentication and offline support are not implemented yet. The disabled logging action is explicitly labelled in the UI.
 
-| File | Use |
+## Run locally
+
+Requires Node.js 22.19+ (22.x) or 24+ and npm 10+.
+
+```sh
+npm ci
+npm run dev
+```
+
+Open the URL printed by Vite, normally `http://127.0.0.1:5173`. The root URL redirects to `/weight`.
+
+For a phone on the same local network:
+
+```sh
+npm run dev:lan
+```
+
+Open the network URL printed by Vite on your phone. The PC must remain running and its firewall must allow the connection on your private network. This exposes the development server on the local network; it is not a public production deployment.
+
+## Commands
+
+| Command | Purpose |
 | --- | --- |
-| `tokens/emberpath.tokens.css` | Framework-independent primitive, semantic and component color tokens. |
-| `tokens/emberpath.tokens.json` | Matching machine-readable color tokens with aliases. |
-| `tokens/emberpath.tailwind.css` | Tailwind CSS v4 theme mapping; imports the base token file. |
-| `tokens/README.md` | Token usage, contrast checks, states and chart guidance. |
-| `logos/emberpath-logo.svg` | Main horizontal logo on a transparent background; use on dark surfaces. |
-| `logos/emberpath-logo-glow.svg` | Presentation logo with SVG glow filters and an opaque Onyx background. |
-| `logos/emberpath-logo-on-light.svg` | Dark wordmark and deeper orange for light surfaces. |
-| `logos/emberpath-wordmark.svg` | Standalone outlined wordmark, for dark surfaces. |
-| `logos/emberpath-mark.svg` | Orange symbol with a transparent background. |
-| `logos/emberpath-mark-mono.svg` | Single-color symbol; defaults to off-white and uses `currentColor`. |
-| `logos/emberpath-app-icon.svg` | Rounded-square app icon. |
-| `logos/emberpath-app-icon-maskable.svg` | Full-bleed icon, with the symbol within the central maskable safe zone. |
-| `logos/favicon.svg` | Small browser icon. |
-| `icons/` | PNG application icons, Apple touch icon and ICO favicon. |
-| `manifest.example.webmanifest` | Starting point for a web app manifest. |
-| `preview.html` | Local visual overview; open in a browser. |
-| `preview.png` | Static preview of the identity and palette. |
-| `reference/emberpath-approved-concept.png` | The original first concept selected in the conversation. |
+| `npm run dev` | Local development, bound to loopback. |
+| `npm run dev:lan` | Development accessible on the local network. |
+| `npm run typecheck` | TypeScript checks for app and tooling configuration. |
+| `npm run lint` | ESLint, React Hooks and React Refresh checks. |
+| `npm run build` | Type-check and generate production assets in `dist/`. |
+| `npm run preview` | Preview a built app locally; not a production server. |
 
-## Add to the frontend
+## How the pieces fit
 
-1. Copy `tokens/` to `src/app/ui/tokens/`.
-2. Copy `logos/` and `icons/` to `public/brand/`, keeping both folders.
-3. Import the Tailwind mapping from the app's main stylesheet, after Tailwind itself:
+- **React 19 + TypeScript** render the interface with typed components.
+- **Vite** provides the development server and production build.
+- **React Router 7**, in declarative mode, owns navigation. Routes are defined in `src/routes/`.
+- **TanStack Query 5** is configured once in `AppProviders`, ready to own future server data. The shell does not issue requests or invent empty API results.
+- **Tailwind CSS 4** uses the Vite plugin and the existing semantic design tokens. Global layout styles live in `src/app/styles.css`.
+- **Manrope** is bundled locally through Fontsource. The app does not request fonts from a third-party server.
+- **Zustand** is intentionally deferred until there is shared client state that warrants a store. Keep form state local and server data in TanStack Query.
 
-```css
-@import "tailwindcss";
-@import "./app/ui/tokens/emberpath.tailwind.css";
+## Structure
+
+```text
+src/
+  app/
+    config/           # Environment access
+    layout/           # App header, navigation, content and footer
+    providers/        # Query client and browser router
+    ui/               # App-level UI and design tokens
+    styles.css
+  entities/           # Shared domain types, once the API contract is agreed
+  features/
+    weight/
+      api/            # Boundary reserved for weight requests and query options
+      components/     # Weight page and its empty state
+  routes/             # Central route definitions and paths
+  main.tsx
+public/
+  brand/              # Runtime SVGs, favicons and app icons
+  manifest.webmanifest
+docs/
+  brand/              # Identity reference, original concept and preview
 ```
 
-The relative import assumes the main stylesheet is directly under `src/`. Adjust it to the actual location. Tailwind core is imported once by the application, not by the token file.
+Add `shared/` when a component or helper has at least two feature consumers, rather than building abstractions in advance. Add test utilities alongside the first behavior that needs them. `@/` resolves to `src/`.
 
-Use the logo in React:
+## API configuration
 
-```tsx
-<img
-  src="/brand/logos/emberpath-logo.svg"
-  alt="Emberpath"
-  width={220}
-  height={61}
-/>
+Copy `.env.example` to `.env.local` if you want to override the default:
+
+```dotenv
+VITE_API_URL=/api
 ```
 
-Use an empty `alt` when the same brand name already appears immediately beside the image. All SVGs include accessible titles and descriptions, but an external `<img>` still needs its own `alt` text.
+`src/app/config/env.ts` is the central accessor. The value is reserved for the next integration step and is not used for any requests yet. The default relative URL supports future same-origin routing; this shell does not configure a proxy or provide an API at `/api`.
 
-For the optional manifest, copy `manifest.example.webmanifest` to `public/brand/manifest.webmanifest`. The icon paths are relative to that manifest. Add to the application's HTML head:
+Vite substitutes `VITE_*` values into the browser bundle. They are public configuration, never a place for database passwords, API secrets or private tokens.
 
-```html
-<meta name="theme-color" content="#111113" />
-<link rel="icon" type="image/svg+xml" href="/brand/logos/favicon.svg" />
-<link rel="icon" href="/brand/icons/favicon.ico" sizes="16x16 32x32 48x48" />
-<link rel="apple-touch-icon" href="/brand/icons/apple-touch-icon.png" />
-<link rel="manifest" href="/brand/manifest.webmanifest" />
-```
+## Assets and hosting
 
-The manifest is an integration example; this asset package does not implement offline support, authentication or a running application. Adapt its start URL and scope if the app is hosted below a URL subpath.
+The [brand guide](docs/brand/README.md) explains the asset locations. Colors remain in the [token files](src/app/ui/tokens/README.md).
 
-## Identity rules
+The app uses browser-history routing. A future static host must serve `index.html` for app routes such as `/weight`, while preserving real API and asset responses. The app currently assumes hosting at the domain root.
 
-- Use the flat logo in the app header and the glow version on larger introductory or brand surfaces.
-- Preserve aspect ratio and the negative-space path through the flame. Use the mark alone when the wordmark would be smaller than roughly 150 px wide.
-- Keep at least one quarter of the symbol's width clear around the logo.
-- Use dark text on orange action buttons. White text on the primary orange does not provide sufficient contrast for ordinary small text.
-- Use green for successful actions, such as a saved entry. A rising or falling weight trend is not automatically good or bad; use the neutral orange trend token in either direction.
-- The subtle border token is decorative. Use the stronger control-border token when a field depends on its outline to be recognizable.
+The manifest provides the name, colors and icons. It does not add offline functionality or sync on its own. PWA capabilities and HTTPS deployment will be addressed separately.
 
-## Source and format
-
-The SVG artwork is a cleaned vector reconstruction of the approved generated concept. The flame uses cubic curves; the wordmark uses outlined paths derived from the unlit refinement of the same concept. It is not a pixel-identical conversion of the first glowing raster image. That original is preserved in `reference/`.
-
-SVG files contain native paths, shapes and, for the glow version, SVG filters. They contain no embedded bitmap, font, script or external dependency. The wordmark therefore requires no font installation. The mono mark can inherit a CSS `color` when inlined; CSS on an outer `<img>` cannot recolor an external SVG.
-
-The palette is intentionally dark-only. The on-light logo is an asset variant, not a complete light application theme. Typography, spacing and layout tokens are left for the first application implementation.
-
-Domain ownership and name availability have not been verified as part of this asset preparation.
-
-## Validation
-
-- All nine SVG files parse and render, with no embedded raster images, scripts, external resources or live text.
-- The preview was checked in a browser at widths of 320, 375 and 1100 px: all images load, there is no horizontal overflow and there are no script errors.
-- CSS/JSON values and Tailwind mapping references resolve consistently. Contrast checks for the intended text and control pairs are listed in `tokens/README.md`.
-- The maskable icon's colored symbol fits inside its required central safe zone, and all manifest icon paths exist.
-- Tailwind v4 mapping syntax has been checked against the official documentation. Compilation in the actual React app remains part of repository integration.
+Docker, Docker Compose and backend setup belong to later agreed steps. The sibling repositories are `Emberpath` for shared documentation/orchestration and `Emberpath-weight-service` for the API.
