@@ -21,11 +21,10 @@ export default defineConfig([
     },
   },
   {
-    files: ['vite.config.ts', 'eslint.config.js'],
+    files: ['vite.config.ts', 'vitest.config.ts', 'eslint.config.js'],
     extends: [js.configs.recommended],
     languageOptions: {
       globals: globals.node,
     },
   },
 ])
-

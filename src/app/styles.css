@@ -78,3 +78,43 @@
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
 }
+
+@layer components {
+  .weight-entry { padding: 28px; background: var(--ep-semantic-surface); border: 1px solid var(--ep-semantic-border-subtle); border-radius: 16px; }
+  .entry-heading { margin-bottom: 24px; }
+  .entry-heading h2 { font-size: 1.125rem; font-weight: 650; }
+  .entry-heading p { color: var(--ep-semantic-text-secondary); font-size: .875rem; margin-top: 4px; }
+  .entry-fields { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 20px; min-width: 0; }
+  .form-field { display: flex; flex: 1 1 180px; flex-direction: column; gap: 8px; min-width: 0; }
+  .form-field label { font-size: .875rem; font-weight: 600; }
+  .form-field input { width: 100%; min-height: 48px; min-width: 0; padding: 10px 12px; border: 1px solid var(--ep-component-input-border); background: var(--ep-component-input-background); color: var(--ep-semantic-text-primary); border-radius: 8px; }
+  .form-field input::placeholder { color: var(--ep-semantic-text-secondary); }
+  .entry-actions, .measurement-actions { display: flex; gap: 8px; }
+  .entry-actions { flex-wrap: wrap; }
+  .log-button { min-height: 48px; background: var(--ep-semantic-primary); color: var(--ep-semantic-primary-foreground); }
+  .log-button:hover:enabled { background: var(--ep-semantic-primary-hover); }
+  .secondary-button { min-height: 44px; padding: 9px 14px; border: 1px solid var(--ep-semantic-border-control); border-radius: 8px; color: var(--ep-semantic-text-primary); font-size: .875rem; font-weight: 600; }
+  .secondary-button:hover:enabled { background: var(--ep-semantic-surface-hover); }
+  .delete-button { color: var(--ep-semantic-error); }
+  button:disabled, fieldset:disabled .log-button { background: var(--ep-semantic-disabled); color: var(--ep-semantic-disabled-foreground); cursor: not-allowed; }
+  .form-error { color: var(--ep-semantic-error); font-size: .875rem; margin-top: 16px; max-width: 70ch; }
+  .save-status { min-height: 52px; padding-block: 14px; color: var(--ep-semantic-success); font-size: .875rem; }
+  .history-notice { padding: 28px; color: var(--ep-semantic-text-secondary); }
+  .history-notice .form-error { margin: 0 0 16px; }
+  .measurement-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 28px; }
+  .measurement-row + .measurement-row { border-top: 1px solid var(--ep-semantic-border-subtle); }
+  .measurement-values { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px 40px; }
+  .measurement-values time { color: var(--ep-semantic-text-secondary); font-size: .9375rem; min-width: 105px; }
+  .measurement-weight { font-size: 1.375rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .measurement-weight span { color: var(--ep-semantic-text-secondary); font-size: .875rem; font-weight: 400; }
+}
+
+@media (max-width: 640px) {
+  .weight-entry { padding: 20px; }
+  .entry-fields { gap: 16px; }
+  .entry-actions { width: 100%; }
+  .entry-actions .log-button { flex: 1; }
+  .measurement-row { padding: 20px; align-items: flex-start; }
+  .measurement-values { flex-direction: column; gap: 4px; }
+  .measurement-actions { flex-wrap: wrap; justify-content: flex-end; }
+}
