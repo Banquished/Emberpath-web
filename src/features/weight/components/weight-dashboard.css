@@ -1,0 +1,27 @@
+.weight-dashboard .page-heading { margin-bottom: 24px; }
+.period-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-bottom: 20px; }
+.period-buttons { display: flex; gap: 4px; padding: 4px; border: 1px solid var(--ep-semantic-border-subtle); border-radius: 12px; background: var(--ep-semantic-surface); }
+.period-buttons button { min-width: 48px; min-height: 44px; border-radius: 8px; color: var(--ep-semantic-text-secondary); font-size: .875rem; font-weight: 600; }
+.period-buttons button[aria-pressed=true] { color: var(--ep-semantic-selected-foreground); background: var(--ep-semantic-selected); }
+.period-select { display: none; }
+.weight-chart-panel { border: 1px solid var(--ep-semantic-border-subtle); border-radius: 16px; background: var(--ep-semantic-surface); padding: 24px 20px 16px; margin-bottom: 24px; }
+.chart-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; padding-inline: 8px; }
+.chart-heading h2 { font-weight: 600; }
+.weight-chart { height: 280px; width: 100%; min-width: 0; }
+.chart-help { font-size: .75rem; color: var(--ep-semantic-text-secondary); padding: 12px 8px 0; }
+.chart-empty { min-height: 280px; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; color: var(--ep-semantic-text-secondary); gap: 8px; }
+.weight-dialog { margin: auto; width: min(600px, calc(100% - 32px)); max-height: calc(100svh - 32px); padding: 0; border: 0; border-radius: 16px; background: var(--ep-semantic-surface); color: var(--ep-semantic-text-primary); overflow-y: auto; }
+.weight-dialog::backdrop { background: rgb(0 0 0 / .72); }
+.weight-dialog .entry-actions { width: 100%; justify-content: flex-end; }
+@media (max-width: 640px) {
+  .weight-dashboard .page-heading { flex-direction: row; align-items: flex-start; gap: 16px; }
+  .weight-dashboard .page-heading .log-button { flex-shrink: 0; padding-inline: 12px; }
+  .weight-dashboard .page-description { font-size: .875rem; }
+  .period-buttons { display: none; }
+  .period-select { display: flex; align-items: center; gap: 12px; font-size: .875rem; }
+  .period-select select { min-height: 44px; border: 1px solid var(--ep-semantic-border-control); border-radius: 8px; padding: 8px 12px; background: var(--ep-semantic-surface); color: var(--ep-semantic-text-primary); }
+  .period-toolbar > .unit-label { display: none; }
+  .weight-chart-panel { padding: 20px 8px 12px; }
+  .weight-chart { height: 220px; }
+  .weight-dialog { margin: auto 0 0; width: 100%; max-width: none; max-height: 90svh; border-radius: 20px 20px 0 0; padding-bottom: env(safe-area-inset-bottom); }
+}

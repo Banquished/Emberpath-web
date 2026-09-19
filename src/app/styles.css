@@ -9,7 +9,7 @@
 @layer base {
   body {
     margin: 0;
-    min-width: 320px;
+    min-width: 0;
     background: var(--ep-semantic-background);
     color: var(--ep-semantic-text-primary);
     font-family: var(--font-sans);

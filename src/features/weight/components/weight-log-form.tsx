@@ -54,7 +54,7 @@ export function WeightLogForm({ entry, onSaved, onCancel, disabled }: WeightLogF
           </div>
           <div className="entry-actions">
             <button className="log-button" type="submit">{save.isPending ? 'Saving…' : entry ? 'Save changes' : 'Save weight'}</button>
-            {entry && <button className="secondary-button" type="button" onClick={onCancel}>Cancel</button>}
+            <button className="secondary-button" type="button" onClick={onCancel}>Cancel</button>
           </div>
         </fieldset>
         {save.error && <p className="form-error" role="alert">{save.error.message}</p>}

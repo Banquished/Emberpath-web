@@ -2,7 +2,11 @@
 
 The mobile-friendly frontend for Emberpath, starting with a weight journal.
 
-Log one weight measurement per date, browse your history, edit entries and delete them after confirmation. Measurements are stored by the FastAPI weight service in PostgreSQL. The interface retains the Onyx/Ember identity and distinguishes loading, empty history and request failures. Charts, authentication and offline support are not implemented yet.
+Log one weight measurement per date, follow the daily chart, browse your history, edit entries and delete them after confirmation. Measurements are stored by the FastAPI weight service in PostgreSQL. The interface retains the Onyx/Ember identity and distinguishes loading, empty history and request failures. Authentication and offline support are not implemented yet.
+
+The shared period filter offers 1/2 weeks, 1/3/6/12 months and all time, defaulting to the last month. Weeks include today and the preceding 6/13 days; months start on the matching calendar date (clamped at month end). The history shows 10/25/50 entries per page in a bounded scrolling panel. Changing the period resets pagination; the chart always shows all measurements in the selected period, with gaps for unrecorded days. Filtering and pagination currently use the full history returned by the API.
+
+Use **Log weight** to open the entry dialog (a bottom sheet on phones). Row **Actions** provide editing and deletion. The chart supports pointer/touch inspection and arrow-key navigation, with exact values also available in the table. On phones, the period buttons become a dropdown.
 
 ## Run the complete app with Docker
 
