@@ -1,3 +1,4 @@
+import { RequireAuth } from '@/app/auth/require-auth'
 import { Navigate, Route, Routes } from 'react-router'
 import { AppLayout } from '@/app/layout/app-layout'
 import { NotFoundPage } from '@/app/ui/not-found-page'
@@ -9,7 +10,7 @@ export function AppRoutes() {
     <Routes>
       <Route element={<AppLayout />}>
         <Route index element={<Navigate to={paths.weight} replace />} />
-        <Route path={paths.weight} element={<WeightPage />} />
+        <Route path={paths.weight} element={<RequireAuth><WeightPage /></RequireAuth>} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>

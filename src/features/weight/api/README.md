@@ -1,6 +1,7 @@
 # Weight API boundary
 
-Weight requests and TanStack Query options will live here when the service contract is agreed.
-Read the base URL from `@/app/config/env`. Keep HTTP calls out of components and client-state stores.
+`weight-logs.ts` owns weight CRUD requests and TanStack Query hooks. It reads the API base URL from `@/app/config/env` and obtains a current Clerk session token for each request. Keep HTTP calls out of components and client-state stores.
 
-The current shell has no API requests or mock measurements. Do not turn a missing service into an empty response: the real integration must distinguish loading, error and empty states.
+Queries are scoped by authenticated user and session. The app additionally isolates each session's query cache and gates the journal until sign-in completes. Ownership comes from the validated identity on the backend, never from a user ID in the request body.
+
+Keep loading, authentication failures, service errors and empty history distinct.

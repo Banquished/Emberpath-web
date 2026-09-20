@@ -1,7 +1,7 @@
 import { lazy, Suspense, useState } from 'react'
-import { useIsMutating, useQuery } from '@tanstack/react-query'
+import { useIsMutating } from '@tanstack/react-query'
 import type { WeightLog } from '@/entities/weight-log'
-import { useDeleteWeightLog, weightLogsQuery } from '../api/weight-logs'
+import { useDeleteWeightLog, useWeightLogs } from '../api/weight-logs'
 import { filterMeasurements, periods, type Period } from '../weight-range'
 import { WeightHistory } from './weight-history'
 import { WeightLogDialog } from './weight-log-dialog'
@@ -11,7 +11,7 @@ const WeightChart = lazy(() => import('./weight-chart').then((module) => ({ defa
 const dateFormatter = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 
 export function WeightPage() {
-  const history = useQuery(weightLogsQuery)
+  const history = useWeightLogs()
   const remove = useDeleteWeightLog()
   const busy = useIsMutating({ mutationKey: ['weight-logs'] }) > 0
   const [dialog, setDialog] = useState<{ entry: WeightLog | null } | null>(null)

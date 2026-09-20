@@ -6,6 +6,8 @@ import type { WeightLog, WeightLogInput } from '@/entities/weight-log'
 import { WeightPage } from './weight-page'
 import './weight-chart'
 
+vi.mock('@clerk/react', () => ({ useAuth: () => ({ isLoaded: true, isSignedIn: true, userId: 'user-a', sessionId: 'session-a', getToken: async () => 'test-token' }) }))
+
 const sample: WeightLog = { id: '083c82c3-f14c-429a-a89c-62f79c994be7', date: '2026-09-16', weight_kg: 82.5 }
 
 beforeEach(() => {
@@ -123,7 +125,7 @@ describe('weight journal', () => {
     await user.click(screen.getByRole('button', { name: 'Delete measurement for 16 Sept 2026' }))
     expect(await screen.findByText('Measurement deleted.')).toBeInTheDocument()
     expect(screen.getByText('No measurements yet')).toBeInTheDocument()
-    expect(fetchMock).toHaveBeenCalledWith(`/api/weight-logs/${sample.id}`, { method: 'DELETE' })
+    expect(fetchMock).toHaveBeenCalledWith(`/api/weight-logs/${sample.id}`, expect.objectContaining({ method: 'DELETE' }))
   })
 
   it('preserves dialog input when the date already has a measurement', async () => {

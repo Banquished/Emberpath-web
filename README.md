@@ -2,7 +2,7 @@
 
 The mobile-friendly frontend for Emberpath, starting with a weight journal.
 
-Log one weight measurement per date, follow the daily chart, browse your history, edit entries and delete them after confirmation. Measurements are stored by the FastAPI weight service in PostgreSQL. The interface retains the Onyx/Ember identity and distinguishes loading, empty history and request failures. Authentication and offline support are not implemented yet.
+Log one weight measurement per date, follow the daily chart, browse your history, edit entries and delete them after confirmation. Measurements are stored by the FastAPI weight service in PostgreSQL. The interface retains the Onyx/Ember identity and distinguishes loading, empty history and request failures. Clerk handles sign-in and account registration; the API enforces measurement ownership. Offline support is not implemented.
 
 The shared period filter offers 1/2 weeks, 1/3/6/12 months and all time, defaulting to the last month. Weeks include today and the preceding 6/13 days; months start on the matching calendar date (clamped at month end). The history shows 10/25/50 entries per page in a bounded scrolling panel. Changing the period resets pagination; the chart always shows all measurements in the selected period, with gaps for unrecorded days. Filtering and pagination currently use the full history returned by the API.
 
@@ -31,6 +31,7 @@ Then run from `Emberpath-web`:
 
 ```sh
 npm ci
+# Create .env.local and set VITE_CLERK_PUBLISHABLE_KEY to your public Clerk key.
 npm run dev
 ```
 
@@ -40,7 +41,7 @@ Vite forwards `/api` requests to `http://127.0.0.1:8000` by default. The optiona
 
 For a phone on the same Wi-Fi, open the network URL printed by Vite, or find the PC's IPv4 address with `ipconfig` and open `http://<LAN_IP>:5173/weight`. `npm run dev` already enables network access; `npm run dev:lan` does the same. Compose-web is also accessible at this address when using the full Docker setup.
 
-Use the PC's address, not the phone's `localhost`. Keep `VITE_API_URL=/api` so API requests go through the web server; the API and database need no direct network exposure. The PC must remain running, the network must allow connections between devices, and its firewall must allow inbound TCP port 5173 on that network. Use a trusted local network; the app has no authentication.
+Use the PC's address, not the phone's `localhost`. Keep `VITE_API_URL=/api` so API requests go through the web server; the API and database need no direct network exposure. The PC must remain running, the network must allow connections between devices, and its firewall must allow inbound TCP port 5173 on that network. Configure the exact LAN origin in the backend authorized parties. Clerk development sessions may require a supported local hostname or HTTPS; production authentication requires HTTPS.
 
 ## Commands
 
@@ -120,3 +121,11 @@ npm run build
 ```
 
 The component tests use mocked HTTP responses and cover loading, failures, creation, editing, duplicate dates and deletion confirmation. They do not need a running database. Use the complete Compose stack to verify the browser-to-PostgreSQL flow.
+
+## Authentication
+
+This is a Vite SPA with declarative React Router, using `@clerk/react`. Sign-in and sign-up open Clerk modals; the account button manages the signed-in session. The journal does not mount until authentication loads and the user signs in. Each API request obtains a current Clerk session token and sends it as `Authorization: Bearer ...`.
+
+Set `VITE_CLERK_PUBLISHABLE_KEY` in ignored `.env.local` for Vite. For Docker, pass it as the build argument of the same name (the shared Compose file does this). The publishable key is public and bundled into the app. Never add `CLERK_SECRET_KEY` to frontend configuration. Rebuild the container after changing the publishable key. Configure matching issuer and allowed web origins in the weight-service.
+
+Query caches and mounted private UI are isolated by Clerk user and session. Signing out or switching accounts discards the previous cache and form state. Provider IDs are not sent as ownership fields; the API derives ownership from the validated token and maps it to an internal Emberpath UUID.
