@@ -27,6 +27,7 @@
   --color-info: var(--ep-semantic-info);
   --color-chart-observation: var(--ep-semantic-chart-observation);
   --color-chart-trend: var(--ep-semantic-chart-trend);
+  --color-chart-average: var(--ep-semantic-chart-average);
   --color-chart-target: var(--ep-semantic-chart-target);
   --color-chart-grid: var(--ep-semantic-chart-grid);
   --color-chart-label: var(--ep-semantic-chart-label);

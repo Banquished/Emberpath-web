@@ -129,3 +129,18 @@ This is a Vite SPA with declarative React Router, using `@clerk/react`. Sign-in 
 Set `VITE_CLERK_PUBLISHABLE_KEY` in ignored `.env.local` for Vite. For Docker, pass it as the build argument of the same name (the shared Compose file does this). The publishable key is public and bundled into the app. Never add `CLERK_SECRET_KEY` to frontend configuration. Rebuild the container after changing the publishable key. Configure matching issuer and allowed web origins in the weight-service.
 
 Query caches and mounted private UI are isolated by Clerk user and session. Signing out or switching accounts discards the previous cache and form state. Provider IDs are not sent as ownership fields; the API derives ownership from the validated token and maps it to an internal Emberpath UUID.
+
+## Personal weight goals
+
+The weight page supports one active weight goal per user: set a target weight, a start date and an optional target date. Changing a goal preserves the previous goal record on the server. Completion and cancellation require confirmation and remove the current chart target; a goal-history view is not yet provided.
+
+A dated goal with a saved starting weight shows a lavender planned path and the weekly/fortnightly pace supplied by the backend. The visible path is clipped to at most one calendar month ahead without changing its original pace or deadline. Undated goals keep a flat target line. Use Show goal to hide either line and restore the measurement-only chart scale. Measurements and summaries remain filtered by the selected period. This is a plan, not a forecast or a prescribed rate of weight change. No target is reached automatically. Goal requests use the authenticated `/weight-goals` API and a user/session-scoped query cache.
+
+
+The chart's Rolling average selector offers 7, 14 and 30 calendar days (default 7). Values come from the backend; each window has a separate query cache entry. The selection stays active when changing the measurement period and resets on page remount.
+
+## Measurement files
+
+Import file accepts UTF-8 delimited text (`.csv` or `.txt`) up to 1 MiB and 10,000 measurement rows. Choose comma, semicolon or tab as the delimiter, regardless of file extension. Comma is selected initially. Use `date,weight,unit` headers with the selected delimiter, ISO dates, decimal points and `kg` or `lb`. The service converts pounds to kilograms. Preview shows normalized values and row errors before any write; fix every error before confirming. Existing dates are skipped by default. Choosing replace requires a fresh preview and explicitly overwrites matching weights. Changes to measurements after preview require another preview before saving.
+
+Export all history downloads the signed-in user's complete history in kilograms, independently of the chart period. Choose a comma, semicolon or tab delimiter; each export uses a `.csv` filename, includes the same headers and can be imported again. Import refreshes measurements, summaries and rolling averages. Existing saved goal baselines stay unchanged.

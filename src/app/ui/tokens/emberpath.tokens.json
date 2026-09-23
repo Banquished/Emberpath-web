@@ -344,6 +344,11 @@
       "$value": "{primitive.ember-400}",
       "$description": "Weight trend regardless of whether weight rises or falls."
     },
+    "chart-average": {
+      "$type": "color",
+      "$value": "{primitive.sky-300}",
+      "$description": "Rolling average; use a dashed line and a labeled legend alongside recorded measurements."
+    },
     "chart-target": {
       "$type": "color",
       "$value": "{primitive.lavender-300}",

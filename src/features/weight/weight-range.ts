@@ -30,10 +30,14 @@ export function periodStart(period: Period, now: Date) {
   return dateKey(start)
 }
 
-export function filterMeasurements(entries: WeightLog[], period: Period, now: Date) {
+export function periodBounds(period: Period, now: Date) {
   const start = periodStart(period, now)
-  const end = dateKey(now)
-  return entries.filter((entry) => !start || (entry.date >= start && entry.date <= end))
+  return { start: start ?? undefined, end: start ? dateKey(now) : undefined }
+}
+
+export function filterMeasurements(entries: WeightLog[], period: Period, now: Date) {
+  const { start, end } = periodBounds(period, now)
+  return entries.filter((entry) => (!start || entry.date >= start) && (!end || entry.date <= end))
     .sort((a, b) => b.date.localeCompare(a.date))
 }
 

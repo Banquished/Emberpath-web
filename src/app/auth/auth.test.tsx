@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/reac
 import { act, render, renderHook, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PropsWithChildren } from 'react'
-import { useDeleteWeightLog, useSaveWeightLog, useWeightLogs } from '@/features/weight/api/weight-logs'
+import { useDeleteWeightLog, useSaveWeightLog, useWeightLogs, useWeightSummary, useWeightRollingAverage } from '@/features/weight/api/weight-logs'
 import { RequireAuth } from './require-auth'
 import { SessionProvider } from './session-provider'
 
@@ -110,4 +110,43 @@ describe('authenticated journal', () => {
     expect(screen.getByText('No private data')).toBeInTheDocument()
     client.clear()
   })
+})
+
+
+it('isolates summary data when the account changes inside a shared query client', async () => {
+  const client = new QueryClient()
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ measurement_count: 7 })))
+  const { result, rerender } = renderHook(() => useWeightSummary('2026-09-01', '2026-09-20'), { wrapper: ({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider> })
+  await waitFor(() => expect(result.current.data?.measurement_count).toBe(7))
+  auth.userId = 'user-b'
+  auth.sessionId = 'session-b'
+  vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})))
+  rerender()
+  expect(result.current.data).toBeUndefined()
+  expect(result.current.isPending).toBe(true)
+  client.clear()
+})
+
+
+it('isolates rolling averages by account and invalidates them after each mutation', async () => {
+  const client = new QueryClient()
+  const fetchMock = vi.fn().mockImplementation(async () => Response.json({ window_days: 7, points: [{ date: '2026-09-20', mean_weight_kg: 82, measurement_count: 3 }] }))
+  vi.stubGlobal('fetch', fetchMock)
+  const { result, rerender } = renderHook(() => ({ average: useWeightRollingAverage(), save: useSaveWeightLog(), remove: useDeleteWeightLog() }), { wrapper: ({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider> })
+  await waitFor(() => expect(result.current.average.isSuccess).toBe(true))
+  const averageCalls = () => fetchMock.mock.calls.filter(([url]) => url.includes('/rolling-average')).length
+  const input = { date: '2026-09-20', weight_kg: 82 }
+  await act(async () => { await result.current.save.mutateAsync({ input }) })
+  expect(averageCalls()).toBe(2)
+  await act(async () => { await result.current.save.mutateAsync({ id: 'one', input }) })
+  expect(averageCalls()).toBe(3)
+  await act(async () => { await result.current.remove.mutateAsync('one') })
+  expect(averageCalls()).toBe(4)
+  auth.userId = 'user-b'
+  auth.sessionId = 'session-b'
+  fetchMock.mockImplementation(() => new Promise<Response>(() => {}))
+  rerender()
+  expect(result.current.average.data).toBeUndefined()
+  expect(result.current.average.isPending).toBe(true)
+  client.clear()
 })

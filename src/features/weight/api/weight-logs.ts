@@ -1,6 +1,8 @@
 import { useAuth } from '@clerk/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { env } from '@/app/config/env'
+import type { RollingAverageWindow, WeightRollingAverage } from '@/entities/weight-rolling-average'
+import type { WeightSummary } from '@/entities/weight-summary'
 import type { WeightLog, WeightLogInput } from '@/entities/weight-log'
 
 const baseUrl = `${env.apiBaseUrl.replace(/\/$/, '')}/weight-logs`
@@ -33,6 +35,35 @@ export function useWeightLogs() {
   return useQuery({
     queryKey: ['weight-logs', userId, sessionId],
     queryFn: ({ signal }) => request<WeightLog[]>(getToken, '', { signal }),
+    enabled: isLoaded && isSignedIn,
+    retry: false,
+  })
+}
+
+export function useWeightSummary(start?: string, end?: string) {
+  const { getToken, userId, sessionId, isLoaded, isSignedIn } = useAuth()
+  const params = new URLSearchParams()
+  if (start) params.set('start_date', start)
+  if (end) params.set('end_date', end)
+  const query = params.toString()
+  return useQuery({
+    queryKey: ['weight-logs', userId, sessionId, 'summary', start, end],
+    queryFn: ({ signal }) => request<WeightSummary>(getToken, `/summary${query ? `?${query}` : ''}`, { signal }),
+    enabled: isLoaded && isSignedIn,
+    retry: false,
+  })
+}
+
+export function useWeightRollingAverage(start?: string, end?: string, windowDays: RollingAverageWindow = 7) {
+  const { getToken, userId, sessionId, isLoaded, isSignedIn } = useAuth()
+  const params = new URLSearchParams()
+  if (start) params.set('start_date', start)
+  if (end) params.set('end_date', end)
+  params.set('window_days', String(windowDays))
+  const query = params.toString()
+  return useQuery({
+    queryKey: ['weight-logs', userId, sessionId, 'rolling-average', start, end, windowDays],
+    queryFn: ({ signal }) => request<WeightRollingAverage>(getToken, `/rolling-average${query ? `?${query}` : ''}`, { signal }),
     enabled: isLoaded && isSignedIn,
     retry: false,
   })

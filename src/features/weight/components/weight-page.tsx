@@ -2,7 +2,11 @@ import { lazy, Suspense, useState } from 'react'
 import { useIsMutating } from '@tanstack/react-query'
 import type { WeightLog } from '@/entities/weight-log'
 import { useDeleteWeightLog, useWeightLogs } from '../api/weight-logs'
-import { filterMeasurements, periods, type Period } from '../weight-range'
+import { filterMeasurements, periodBounds, periods, type Period } from '../weight-range'
+import { useActiveWeightGoal } from '../api/weight-goals'
+import { WeightGoalPanel } from './weight-goal'
+import { WeightSummary } from './weight-summary'
+import { WeightTransfer } from './weight-transfer'
 import { WeightHistory } from './weight-history'
 import { WeightLogDialog } from './weight-log-dialog'
 import './weight-dashboard.css'
@@ -12,12 +16,15 @@ const dateFormatter = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 
 
 export function WeightPage() {
   const history = useWeightLogs()
+  const goal = useActiveWeightGoal()
   const remove = useDeleteWeightLog()
   const busy = useIsMutating({ mutationKey: ['weight-logs'] }) > 0
   const [dialog, setDialog] = useState<{ entry: WeightLog | null } | null>(null)
   const [period, setPeriod] = useState<Period>('1m')
   const [message, setMessage] = useState('')
-  const entries = filterMeasurements(history.data ?? [], period, new Date())
+  const now = new Date()
+  const bounds = periodBounds(period, now)
+  const entries = filterMeasurements(history.data ?? [], period, now)
 
   function deleteEntry(entry: WeightLog) {
     const date = dateFormatter.format(new Date(`${entry.date}T12:00:00`))
@@ -39,11 +46,14 @@ export function WeightPage() {
       <label className="period-select">Period<select value={period} onChange={(event) => setPeriod(event.target.value as Period)}>{periods.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
       <span className="unit-label">{periods.find((option) => option.value === period)?.label}{history.data && ` · ${entries.length} measurements`}</span>
     </div>
+    <WeightTransfer busy={busy} />
+    <WeightGoalPanel />
+    <WeightSummary start={bounds.start} end={bounds.end} />
     {history.isPending && <p className="history-notice" role="status">Loading measurements…</p>}
     {history.isError && <div className="history-notice"><p className="form-error" role="alert">{history.error.message}</p><button className="secondary-button" disabled={history.isFetching} onClick={() => void history.refetch()}>{history.isFetching ? 'Retrying…' : 'Retry'}</button></div>}
     {history.data && <>
       {history.data.length === 0 && <p className="history-notice">No measurements yet</p>}
-      <Suspense fallback={<div className="weight-chart-panel chart-empty" role="status">Loading chart…</div>}><WeightChart entries={entries} /></Suspense>
+      <Suspense fallback={<div className="weight-chart-panel chart-empty" role="status">Loading chart…</div>}><WeightChart goal={goal.isError ? null : goal.data} entries={entries} start={bounds.start} end={bounds.end} /></Suspense>
       <WeightHistory key={period} entries={entries} busy={busy} onEdit={(entry) => { setDialog({ entry }); setMessage('') }} onDelete={deleteEntry} />
     </>}
     <p className="save-status" role="status">{message}</p>

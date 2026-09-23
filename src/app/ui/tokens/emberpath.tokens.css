@@ -58,6 +58,7 @@
   --ep-semantic-chart-observation: var(--ep-primitive-stone-300);
   /* Weight trend regardless of whether weight rises or falls. */
   --ep-semantic-chart-trend: var(--ep-primitive-ember-400);
+  --ep-semantic-chart-average: var(--ep-primitive-sky-300);
   /* Target reference line; render dashed and label directly. */
   --ep-semantic-chart-target: var(--ep-primitive-lavender-300);
   --ep-semantic-chart-grid: var(--ep-primitive-onyx-700);

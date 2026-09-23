@@ -36,6 +36,16 @@ function renderPage() {
 function mockService(initial: WeightLog[] = []) {
   let entries = [...initial]
   const fetchMock = vi.fn(async (url: string, options?: RequestInit) => {
+    if (url.includes('/weight-goals')) return Response.json(null)
+    if (url.includes('/rolling-average')) return Response.json({ window_days: Number(new URL(url, 'http://localhost').searchParams.get('window_days') ?? 7), points: entries.map((entry) => ({ date: entry.date, mean_weight_kg: entry.weight_kg, measurement_count: 1 })) })
+    if (url.includes('/summary')) {
+      const params = new URL(url, 'http://localhost').searchParams
+      const filtered = entries.filter((entry) => (!params.get('start_date') || entry.date >= params.get('start_date')!) && (!params.get('end_date') || entry.date <= params.get('end_date')!)).sort((a, b) => a.date.localeCompare(b.date))
+      const first = filtered[0] ?? null
+      const latest = filtered.at(-1) ?? null
+      const change = filtered.length > 1 ? latest!.weight_kg - first!.weight_kg : null
+      return Response.json({ measurement_count: filtered.length, mean_weight_kg: filtered.length ? filtered.reduce((total, entry) => total + entry.weight_kg, 0) / filtered.length : null, first, latest, change_kg: change, change_percent: change === null ? null : change / first!.weight_kg * 100 })
+    }
     if (options?.method === 'POST') {
       const input = JSON.parse(options.body as string) as WeightLogInput
       if (entries.some((entry) => entry.date === input.date)) return Response.json({ detail: 'Duplicate date' }, { status: 409 })
@@ -91,6 +101,7 @@ describe('weight journal', () => {
     expect(within(screen.getByRole('table')).getByText('82.5')).toBeInTheDocument()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(screen.queryByText('No measurements yet')).not.toBeInTheDocument()
+    expect(await within(screen.getByRole('region', { name: 'Period summary' })).findByText('Add another measurement')).toBeInTheDocument()
     expect(fetchMock).toHaveBeenCalledWith('/api/weight-logs', expect.objectContaining({ method: 'POST', body: JSON.stringify({ date: sample.date, weight_kg: 82.5 }) }))
   })
 
@@ -109,6 +120,7 @@ describe('weight journal', () => {
     expect(within(screen.getByRole('table')).getByText('81.25')).toBeInTheDocument()
     expect(within(screen.getByRole('table')).getByText('15 Sept 2026')).toBeInTheDocument()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(within(screen.getByRole('region', { name: 'Period summary' })).getAllByText('81.25 kg')).toHaveLength(3)
     expect(fetchMock).toHaveBeenCalledWith(`/api/weight-logs/${sample.id}`, expect.objectContaining({ method: 'PATCH' }))
   })
 
@@ -125,6 +137,7 @@ describe('weight journal', () => {
     await user.click(screen.getByRole('button', { name: 'Delete measurement for 16 Sept 2026' }))
     expect(await screen.findByText('Measurement deleted.')).toBeInTheDocument()
     expect(screen.getByText('No measurements yet')).toBeInTheDocument()
+    expect(within(screen.getByRole('region', { name: 'Period summary' })).getByText('0')).toBeInTheDocument()
     expect(fetchMock).toHaveBeenCalledWith(`/api/weight-logs/${sample.id}`, expect.objectContaining({ method: 'DELETE' }))
   })
 
@@ -147,7 +160,7 @@ describe('weight journal', () => {
     vi.stubGlobal('fetch', fetchMock)
     const user = userEvent.setup()
     renderPage()
-    expect(await screen.findByRole('alert')).toHaveTextContent('Cannot reach the weight service')
+    expect((await screen.findAllByRole('alert')).some((alert) => alert.textContent?.includes('Cannot reach the weight service'))).toBe(true)
     expect(screen.queryByText('No measurements yet')).not.toBeInTheDocument()
     fetchMock.mockImplementation(() => Promise.resolve(Response.json([])))
     await user.click(screen.getByRole('button', { name: 'Retry' }))
@@ -259,5 +272,144 @@ describe('weight journal', () => {
     expect(historyRows()).toHaveLength(10)
     expect(screen.getByRole('button', { name: 'Previous' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled()
+  })
+})
+
+
+describe('period summary', () => {
+  it('uses authenticated inclusive bounds and updates the cards with the selected period', async () => {
+    const fetchMock = mockService([{ ...sample, date: '2026-09-01', weight_kg: 90 }, { ...sample, id: 'latest', date: '2026-09-19', weight_kg: 80 }])
+    const user = userEvent.setup()
+    renderPage()
+    const summary = await screen.findByRole('region', { name: 'Period summary' })
+    expect(within(summary).getByText('85 kg')).toBeInTheDocument()
+    expect(within(summary).getByText('-10 kg')).toBeInTheDocument()
+    expect(within(summary).getByText('-11.11% from first to latest')).toBeInTheDocument()
+    const call = fetchMock.mock.calls.find(([url]) => url.includes('/summary'))!
+    expect(call[0]).toBe('/api/weight-logs/summary?start_date=2026-08-19&end_date=2026-09-19')
+    expect(new Headers(call[1]?.headers).get('Authorization')).toBe('Bearer test-token')
+    await user.click(screen.getByRole('button', { name: 'Last week' }))
+    expect(await screen.findByText('Add another measurement')).toBeInTheDocument()
+    expect(screen.queryByText('85 kg')).not.toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledWith('/api/weight-logs/summary?start_date=2026-09-13&end_date=2026-09-19', expect.anything())
+    await user.click(screen.getByRole('button', { name: 'All time' }))
+    expect(await screen.findByText('85 kg')).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledWith('/api/weight-logs/summary', expect.anything())
+  })
+
+  it('shows empty values without implying zero weight or change', async () => {
+    mockService()
+    renderPage()
+    const summary = await screen.findByRole('region', { name: 'Period summary' })
+    expect(within(summary).getByText('0')).toBeInTheDocument()
+    expect(within(summary).getAllByText('\u2014')).toHaveLength(4)
+    expect(within(summary).queryByText('0 kg')).not.toBeInTheDocument()
+  })
+
+  it('keeps history usable when summary fails and retries summary independently', async () => {
+    const fetchMock = mockService([sample])
+    const service = fetchMock.getMockImplementation()!
+    let fail = true
+    fetchMock.mockImplementation((url, options) => url.includes('/summary') && fail ? Promise.resolve(Response.json({}, { status: 500 })) : service(url, options))
+    const user = userEvent.setup()
+    renderPage()
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not load the period summary')
+    expect(await screen.findByRole('table')).toBeInTheDocument()
+    fail = false
+    await user.click(screen.getByRole('button', { name: 'Retry summary' }))
+    expect(await screen.findByRole('region', { name: 'Period summary' })).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+})
+
+
+describe('rolling average', () => {
+  it('requests authenticated period bounds and refreshes when the period changes', async () => {
+    const fetchMock = mockService([sample])
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByText('7-day average')
+    const call = fetchMock.mock.calls.find(([url]) => url.includes('/rolling-average'))!
+    expect(call[0]).toBe('/api/weight-logs/rolling-average?start_date=2026-08-19&end_date=2026-09-19&window_days=7')
+    expect(new Headers(call[1]?.headers).get('Authorization')).toBe('Bearer test-token')
+    await user.click(screen.getByRole('button', { name: 'Last week' }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/weight-logs/rolling-average?start_date=2026-09-13&end_date=2026-09-19&window_days=7', expect.anything()))
+    await user.click(screen.getByRole('button', { name: 'All time' }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/weight-logs/rolling-average?window_days=7', expect.anything()))
+  })
+
+  it('keeps recorded measurements visible when the average fails and retries independently', async () => {
+    const fetchMock = mockService([sample])
+    const service = fetchMock.getMockImplementation()!
+    let fail = true
+    fetchMock.mockImplementation((url, options) => url.includes('/rolling-average') && fail ? Promise.resolve(Response.json({}, { status: 500 })) : service(url, options))
+    const user = userEvent.setup()
+    const { container } = renderPage()
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not load the 7-day average')
+    expect(screen.getByRole('table')).toBeInTheDocument()
+    expect(container.querySelectorAll('.recharts-line-dot')).toHaveLength(1)
+    fail = false
+    await user.click(screen.getByRole('button', { name: 'Retry average' }))
+    expect(await screen.findByText('7-day average')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('draws a distinct average without adding dots or filling unrecorded days', async () => {
+    const fetchMock = mockService([sample, { ...sample, id: 'next', date: '2026-09-17', weight_kg: 81 }, { ...sample, id: 'later', date: '2026-09-19', weight_kg: 80 }])
+    const service = fetchMock.getMockImplementation()!
+    fetchMock.mockImplementation((url, options) => url.includes('/rolling-average') ? Promise.resolve(Response.json({ window_days: 7, points: [{ date: sample.date, mean_weight_kg: 83, measurement_count: 3 }, { date: '2026-09-17', mean_weight_kg: 82, measurement_count: 4 }, { date: '2026-09-19', mean_weight_kg: 81, measurement_count: 5 }] })) : service(url, options))
+    const { container } = renderPage()
+    await screen.findByText('7-day average')
+    await waitFor(() => expect(container.querySelectorAll('.recharts-line-dot')).toHaveLength(3))
+    const average = container.querySelector('path.recharts-line-curve[stroke="var(--ep-semantic-chart-average)"]')!
+    expect(average).toHaveAttribute('stroke-dasharray', '8 3')
+    expect(average.getAttribute('d')!.match(/M/g)).toHaveLength(2)
+    expect(screen.getByText(/previous 6 days/)).toBeInTheDocument()
+    fireEvent.keyDown(container.querySelector('[role="application"]')!, { key: 'ArrowRight' })
+    await waitFor(() => expect(container.querySelector('.recharts-tooltip-wrapper')).toHaveTextContent('7-day average'))
+    expect(container.querySelector('.recharts-tooltip-wrapper')).toHaveTextContent('83 kg')
+    expect(container.querySelector('.recharts-tooltip-wrapper')).toHaveTextContent('Weight')
+  })
+})
+
+describe('configurable rolling averages', () => {
+  it('requests each window and retains the selection when changing the measurement period', async () => {
+    const fetchMock = mockService([sample])
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByText('7-day average')
+    const selector = screen.getByRole('combobox', { name: 'Rolling average' })
+    expect(selector).toHaveValue('7')
+    for (const days of [14, 30]) {
+      await user.selectOptions(selector, String(days))
+      await screen.findByText(`${days}-day average`)
+      expect(fetchMock.mock.calls.some(([url]) => url.includes(`window_days=${days}`))).toBe(true)
+      expect(screen.getByText(new RegExp(`previous ${days - 1} days`))).toBeInTheDocument()
+    }
+    await user.click(screen.getByRole('button', { name: 'Last week' }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/weight-logs/rolling-average?start_date=2026-09-13&end_date=2026-09-19&window_days=30', expect.anything()))
+    expect(selector).toHaveValue('30')
+    await user.selectOptions(selector, '7')
+    await screen.findByText('7-day average')
+  })
+
+  it('does not relabel old average data while another window is pending or failed', async () => {
+    const fetchMock = mockService([sample])
+    const service = fetchMock.getMockImplementation()!
+    let finish!: (response: Response) => void
+    fetchMock.mockImplementation((url, options) => url.includes('window_days=14')
+      ? new Promise<Response>((resolve) => { finish = resolve })
+      : service(url, options))
+    const user = userEvent.setup()
+    const { container } = renderPage()
+    await screen.findByText('7-day average')
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Rolling average' }), '14')
+    expect(await screen.findByText('Loading 14-day average...')).toBeInTheDocument()
+    expect(container.querySelector('path[stroke="var(--ep-semantic-chart-average)"]')).not.toBeInTheDocument()
+    expect(screen.getByRole('table')).toBeInTheDocument()
+    finish(Response.json({}, { status: 500 }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not load the 14-day average')
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Rolling average' }), '7')
+    expect(await screen.findByText('7-day average')).toBeInTheDocument()
   })
 })

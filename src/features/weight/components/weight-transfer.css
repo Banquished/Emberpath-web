@@ -1,0 +1,15 @@
+.weight-transfer { margin-top: 20px; }
+.transfer-controls { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; }
+.transfer-controls label, .transfer-dialog > label { display: grid; gap: 8px; font-size: .875rem; }
+.weight-transfer select, .transfer-dialog select, .transfer-dialog input { min-height: 44px; max-width: 100%; padding: 10px; border: 1px solid var(--ep-semantic-border-control); border-radius: 8px; background: var(--ep-semantic-background); color: var(--ep-semantic-text-primary); }
+.transfer-help { color: var(--ep-semantic-text-secondary); font-size: .8rem; line-height: 1.6; margin: 10px 0; }
+.transfer-dialog { padding: 24px; width: min(720px, calc(100% - 32px)); }
+.transfer-dialog > label, .transfer-dialog > button { margin-top: 16px; }
+.transfer-dialog h2 { font-size: 1.25rem; }
+.transfer-actions { justify-content: flex-end; margin-top: 20px; }
+.import-preview { max-height: 280px; overflow: auto; margin-top: 12px; border: 1px solid var(--ep-semantic-border-subtle); border-radius: 8px; }
+.import-preview table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+.import-preview th, .import-preview td { text-align: left; padding: 10px; border-bottom: 1px solid var(--ep-semantic-border-subtle); }
+.import-preview th { position: sticky; top: 0; background: var(--ep-semantic-surface); }
+.import-preview td:last-child { min-width: 140px; }
+@media (max-width: 640px) { .transfer-dialog { width: 100%; padding: 20px; } .transfer-controls { gap: 8px; } }

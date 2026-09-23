@@ -51,6 +51,7 @@ Without Tailwind, import only `emberpath.tokens.css` and use the CSS variables d
 
 - `chart-observation`: individual weigh-ins; render points.
 - `chart-trend`: the trend line, orange whether weight rises or falls.
+- `chart-average`: rolling average, using the existing Sky supporting color (#8DBDF7). Its cool tone complements warm Ember measurements on Onyx surfaces; use a dashed line and a labeled legend. This is a data-series role, independent of status colors.
 - `chart-target`: an optional dashed, directly labeled target line.
 - `chart-grid` is decorative; `chart-label` is readable text.
 - Do not treat weight loss as success or gain as error.
@@ -74,6 +75,7 @@ Calculated using WCAG sRGB relative luminance. On background / surface / raised 
 | Primary text | 13.98:1 |
 | Secondary text | 6.39:1 |
 | Orange primary accent | 6.50:1 |
+| Rolling average (Sky) | 7.81:1 |
 | Error text | 6.99:1 |
 | Control border | 3.44:1 |
 
