@@ -155,6 +155,53 @@ describe('weight journal', () => {
     expect(within(screen.getByRole('table')).getByText('82.5')).toBeInTheDocument()
   })
 
+  it('keeps the edit dialog open on a duplicate-date PATCH', async () => {
+    const fetchMock = mockService([sample])
+    const service = fetchMock.getMockImplementation()!
+    fetchMock.mockImplementation((url, options) => options?.method === 'PATCH'
+      ? Promise.resolve(Response.json({ detail: 'Internal validation detail' }, { status: 409 }))
+      : service(url, options))
+    const user = userEvent.setup()
+    renderPage()
+    await openActions(user)
+    await user.click(screen.getByRole('button', { name: 'Edit measurement for 16 Sept 2026' }))
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('A measurement already exists for this date')
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(screen.getByLabelText('Date')).toHaveValue(sample.date)
+    expect(screen.getByLabelText('Weight (kg)')).toHaveValue(sample.weight_kg)
+    expect(screen.getByRole('alert')).not.toHaveTextContent('Internal validation detail')
+  })
+
+  it('does not mistake a history 422 for a period validation error', async () => {
+    const fetchMock = mockService()
+    const service = fetchMock.getMockImplementation()!
+    fetchMock.mockImplementation((url, options) => url === '/api/weight-logs' && !options?.method
+      ? Promise.resolve(Response.json({ detail: 'Internal validation detail' }, { status: 422 }))
+      : service(url, options))
+    renderPage()
+    expect((await screen.findAllByRole('alert')).some((alert) => alert.textContent?.includes('could not complete the request'))).toBe(true)
+    expect(screen.queryByText('No measurements yet')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Internal validation detail/)).not.toBeInTheDocument()
+  })
+
+  it('does not treat an empty save response as a saved measurement', async () => {
+    const fetchMock = mockService()
+    const service = fetchMock.getMockImplementation()!
+    fetchMock.mockImplementation((url, options) => options?.method === 'POST'
+      ? Promise.resolve(new Response(null, { status: 204 }))
+      : service(url, options))
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByText('No measurements yet')
+    await user.click(screen.getByRole('button', { name: 'Log weight' }))
+    await user.type(screen.getByLabelText('Weight (kg)'), '81')
+    await user.click(screen.getByRole('button', { name: 'Save weight' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('could not complete the request')
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(screen.queryByText('Measurement saved.')).not.toBeInTheDocument()
+  })
+
   it('shows service errors separately from an empty history and can retry', async () => {
     const fetchMock = vi.fn().mockRejectedValue(new TypeError('Network error'))
     vi.stubGlobal('fetch', fetchMock)
@@ -165,6 +212,17 @@ describe('weight journal', () => {
     fetchMock.mockImplementation(() => Promise.resolve(Response.json([])))
     await user.click(screen.getByRole('button', { name: 'Retry' }))
     expect(await screen.findByText('No measurements yet')).toBeInTheDocument()
+  })
+
+  it('does not label a read conflict as a duplicate date', async () => {
+    const fetchMock = mockService()
+    const service = fetchMock.getMockImplementation()!
+    fetchMock.mockImplementation((url, options) => url === '/api/weight-logs' && !options?.method
+      ? Promise.resolve(new Response(null, { status: 409 }))
+      : service(url, options))
+    renderPage()
+    expect((await screen.findAllByRole('alert')).some((alert) => alert.textContent?.includes('could not complete the request'))).toBe(true)
+    expect(screen.queryByText('No measurements yet')).not.toBeInTheDocument()
   })
 
   it('prevents invalid weights from being submitted', async () => {
@@ -277,6 +335,19 @@ describe('weight journal', () => {
 
 
 describe('period summary', () => {
+  it('explains a rejected date range without exposing service details', async () => {
+    const fetchMock = mockService([sample])
+    const service = fetchMock.getMockImplementation()!
+    fetchMock.mockImplementation((url, options) => url.includes('/summary')
+      ? Promise.resolve(Response.json({ detail: 'Internal validation detail' }, { status: 422 }))
+      : service(url, options))
+    renderPage()
+    expect(await screen.findByRole('alert')).toHaveTextContent('Check the selected date range and try again.')
+    expect(screen.getByRole('alert')).not.toHaveTextContent('rolling average window')
+    expect(screen.getByRole('alert')).not.toHaveTextContent('Internal validation detail')
+    expect(screen.getByRole('table')).toBeInTheDocument()
+  })
+
   it('uses authenticated inclusive bounds and updates the cards with the selected period', async () => {
     const fetchMock = mockService([{ ...sample, date: '2026-09-01', weight_kg: 90 }, { ...sample, id: 'latest', date: '2026-09-19', weight_kg: 80 }])
     const user = userEvent.setup()
@@ -324,6 +395,19 @@ describe('period summary', () => {
 
 
 describe('rolling average', () => {
+  it('explains rejected bounds or window without exposing service details', async () => {
+    const fetchMock = mockService([sample])
+    const service = fetchMock.getMockImplementation()!
+    fetchMock.mockImplementation((url, options) => url.includes('/rolling-average')
+      ? Promise.resolve(Response.json({ detail: 'Internal validation detail' }, { status: 422 }))
+      : service(url, options))
+    const { container } = renderPage()
+    expect(await screen.findByRole('alert')).toHaveTextContent('Check the selected date range or rolling average window and try again.')
+    expect(screen.getByRole('alert')).not.toHaveTextContent('Internal validation detail')
+    expect(screen.getByRole('table')).toBeInTheDocument()
+    expect(container.querySelectorAll('.recharts-line-dot')).toHaveLength(1)
+  })
+
   it('requests authenticated period bounds and refreshes when the period changes', async () => {
     const fetchMock = mockService([sample])
     const user = userEvent.setup()

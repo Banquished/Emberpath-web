@@ -91,6 +91,22 @@ describe('personal weight goal', () => {
     expect(screen.getByLabelText('Target weight (kg)')).toHaveValue(75)
     expect(screen.getByRole('dialog')).toBeInTheDocument()
   })
+  it('does not claim an active-goal lookup failure means the goal changed', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 404 })))
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><WeightGoalPanel /></QueryClientProvider>)
+    expect(await screen.findByRole('alert')).toHaveTextContent('could not update your goal')
+    expect(screen.queryByText('No active goal. Add a target when it feels right for you.')).not.toBeInTheDocument()
+  })
+  it('rejects an empty success response from saving a goal', async () => {
+    const { fetchMock } = setup(sample)
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Change goal' }))
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }))
+    await user.click(screen.getByRole('button', { name: 'Save goal' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('could not update your goal')
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
   it('shows a target outside the measured range with an explicit current-target label', async () => {
     const { client, view } = setup()
     view.unmount()
