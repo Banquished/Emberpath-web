@@ -15,6 +15,10 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
+      '/api/nutrition/v1': {
+        target: process.env.NUTRITION_SERVICE_URL || 'http://127.0.0.1:8001',
+        rewrite: (path) => path.replace(/^\/api\/nutrition\/v1(?=\/|$)/, '/api/v1'),
+      },
       '/api': {
         target: process.env.WEIGHT_SERVICE_URL || 'http://127.0.0.1:8000',
         rewrite: (path) => path.replace(/^\/api/, ''),

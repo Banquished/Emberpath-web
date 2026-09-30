@@ -1,5 +1,5 @@
 import { AuthControls } from '@/app/auth/auth-controls'
-import { ChartNoAxesCombined } from 'lucide-react'
+import { Calculator, ChartNoAxesCombined } from 'lucide-react'
 import { Link, NavLink, Outlet } from 'react-router'
 import { paths } from '@/routes/paths'
 
@@ -12,16 +12,27 @@ export function AppLayout() {
           <Link className="brand-link" to={paths.home} aria-label="Emberpath home">
             <img src="/brand/logos/emberpath-logo.svg" alt="" width="184" height="51" />
           </Link>
-          <div className="header-actions"><nav aria-label="Main navigation">
-            <NavLink
-              className={({ isActive }) => `nav-link${isActive ? ' nav-link-active' : ''}`}
-              to={paths.weight}
-              end
-            >
-              <ChartNoAxesCombined size={18} aria-hidden="true" />
-              Weight
-            </NavLink>
-          </nav><AuthControls /></div>
+          <div className="header-actions">
+            <nav aria-label="Main navigation" className="flex flex-wrap gap-1">
+              <NavLink
+                className={({ isActive }) => `nav-link${isActive ? ' nav-link-active' : ''}`}
+                to={paths.weight}
+                end
+              >
+                <ChartNoAxesCombined size={18} aria-hidden="true" />
+                Weight
+              </NavLink>
+              <NavLink
+                className={({ isActive }) => `nav-link${isActive ? ' nav-link-active' : ''}`}
+                to={paths.nutrition}
+                end
+              >
+                <Calculator size={18} aria-hidden="true" />
+                Nutrition
+              </NavLink>
+            </nav>
+            <AuthControls />
+          </div>
         </div>
       </header>
       <main className="app-main" id="main-content" tabIndex={-1}>

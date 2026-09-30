@@ -1,6 +1,6 @@
 # Emberpath Web
 
-The mobile-friendly frontend for Emberpath, starting with a weight journal.
+The mobile-friendly frontend for Emberpath, with a landing page, the weight journal and an authenticated Nutrition calculator and saved-plan workflow. Nutrition estimates and new seven-day allocations can be reviewed without plan storage; saving and reading plans require the Nutrition database.
 
 Log one weight measurement per date, follow the daily chart, browse your history, edit entries and delete them after confirmation. Measurements are stored by the FastAPI weight service in PostgreSQL. The interface retains the Onyx/Ember identity and distinguishes loading, empty history and request failures. Clerk handles sign-in and account registration; the API enforces measurement ownership. Offline support is not implemented.
 
@@ -10,13 +10,13 @@ Use **Log weight** to open the entry dialog (a bottom sheet on phones). Row **Ac
 
 ## Run the complete app with Docker
 
-Place `Emberpath`, `Emberpath-web` and `Emberpath-weight-service` beside each other. Stop any Vite server first: both modes use port 5173. From the `Emberpath` repository:
+Place `Emberpath`, `Emberpath-web`, `Emberpath-weight-service` and `Emberpath-nutrition-service` beside each other. Configure Clerk in the hub's ignored `.env` before using the protected routes. Stop any Vite server first: both modes use port 5173. From the `Emberpath` repository:
 
 ```powershell
 docker compose up --build -d --wait
 ```
 
-Open <http://localhost:5173/weight>. Compose starts PostgreSQL, runs the database migrations and starts the API and web containers. Web listens on all network interfaces; the API at `localhost:8000` and PostgreSQL remain bound to loopback. This repository owns the web Dockerfile and Nginx configuration; shared Compose configuration lives in `Emberpath`. See the [shared setup guide](../Emberpath/readme.md) for ports, persistence and stopping the app.
+Open <http://localhost:5173/> for the landing page, <http://localhost:5173/weight> for the journal or <http://localhost:5173/nutrition> for the calculator and plans. Hub Compose starts separate Weight and Nutrition PostgreSQL databases, runs each service's migrations, then starts both APIs and the web container; Nginx sends Nutrition `/api/nutrition/v1/...` to `nutrition-service:8000/api/v1/...` and keeps other `/api/...` calls on the Weight service. Web listens on all network interfaces; the APIs default to loopback ports `8000` (Weight) and `8001` (Nutrition), configurable in the hub `.env`, and both databases remain bound to loopback. Calculator and new-allocation preview requests do not need plan storage; saved-plan reads and writes do. This repository owns the web Dockerfile and Nginx configuration; shared Compose configuration lives in `Emberpath`. See the [shared setup guide](../Emberpath/readme.md) for ports, authentication, persistence and stopping the app.
 
 ## Run locally
 
@@ -24,7 +24,7 @@ Requires Node.js 22.19+ (22.x) or 24+ and npm 10+. From `Emberpath`, start the d
 
 ```powershell
 docker compose stop web
-docker compose up --build -d --wait weight-service
+docker compose up --build -d --wait weight-service nutrition-service
 ```
 
 Then run from `Emberpath-web`:
@@ -35,13 +35,43 @@ npm ci
 npm run dev
 ```
 
-Open <http://localhost:5173/weight>. Vite listens on `0.0.0.0:5173` and fails if port 5173 is occupied; stop the existing listener instead of using a different port. The root URL redirects to `/weight`.
+Open <http://localhost:5173/> for the landing page, <http://localhost:5173/weight> for the journal or <http://localhost:5173/nutrition> for the calculator and plans. Vite listens on `0.0.0.0:5173` and fails if port 5173 is occupied; stop the existing listener instead of using a different port.
 
-Vite forwards `/api` requests to `http://127.0.0.1:8000` by default. The optional `WEIGHT_SERVICE_URL` Vite server process variable overrides that target. The containerized web app uses Nginx to forward `/api` to `weight-service:8000` on the Compose network instead. For backend development with automatic reload, see the [backend instructions](../Emberpath-weight-service/README.md).
+The hub Compose service exposes the [Nutrition API](../Emberpath-nutrition-service/README.md) on `127.0.0.1` at `NUTRITION_API_PORT` (default `8001`; a local override of `8002` uses `127.0.0.1:8002`); alternatively run it separately with its own migrated database for backend reload. Configure `CLERK_ISSUER` and `CLERK_AUTHORIZED_PARTIES` for the actual web origin. Protected API requests need a verified Clerk session; unavailable authentication returns `503`. Nutrition active/history reads and plan writes need its database and migrations; the calculator and new seven-day allocation preview do not. Do not put server secrets in the web app.
+
+Vite forwards `/api/nutrition/v1/...` to `http://127.0.0.1:8001/api/v1/...` by default, ahead of the generic `/api` proxy to the weight service on `http://127.0.0.1:8000`. If hub Compose overrides `NUTRITION_API_PORT` (for example, to `8002`), set `NUTRITION_SERVICE_URL=http://127.0.0.1:8002` in the Vite server process before starting it. The optional `NUTRITION_SERVICE_URL` and `WEIGHT_SERVICE_URL` are server process variables, not browser `VITE_*` variables. The containerized web app uses the equivalent, more-specific Nginx Nutrition route, followed by the existing Weight route. For weight backend development with automatic reload, see the [weight backend instructions](../Emberpath-weight-service/README.md).
 
 For a phone on the same Wi-Fi, open the network URL printed by Vite, or find the PC's IPv4 address with `ipconfig` and open `http://<LAN_IP>:5173/weight`. `npm run dev` already enables network access; `npm run dev:lan` does the same. Compose-web is also accessible at this address when using the full Docker setup.
 
 Use the PC's address, not the phone's `localhost`. Keep `VITE_API_URL=/api` so API requests go through the web server; the API and database need no direct network exposure. The PC must remain running, the network must allow connections between devices, and its firewall must allow inbound TCP port 5173 on that network. Configure the exact LAN origin in the backend authorized parties. Clerk development sessions may require a supported local hostname or HTTPS; production authentication requires HTTPS.
+
+## Routes
+
+| Path | Current behavior |
+| --- | --- |
+| `/` | Public landing page with links to Weight and Nutrition. |
+| `/weight` | Existing journal; sign-in is required to load private weight data. |
+| `/nutrition` | Authenticated calculator, server-reviewed seven-day allocation and saved-plan lifecycle; editable source-labeled inputs and separate resting, estimated maintenance, adjustment and chosen targets. No food consumption tracking. Requires a reachable Nutrition service and verified session; saved reads and writes need Nutrition storage. |
+
+## Nutrition preview
+
+The calculator loads methods, formula and activity choices, PAL ranges, source-labeled starting suggestions and a provisional-use notice from the authenticated `GET /api/nutrition/v1/estimates/options`. It does not render guessed suggestions when that request fails. `POST /api/nutrition/v1/estimates/preview` sends a chosen method and inputs, returns normalized inputs and targets, and does not create a saved plan or a food-intake record.
+
+The calculated adult method requires an age of 19-120 whole years, manually entered weight of 20-400 kg, height of 100-250 cm, an explicitly selected male/female equation parameter and a general activity category. It shows Mifflin-St Jeor resting energy separately from the 2023 adult maintenance estimate. The manual method, for eligible adults when calculated methods are unsuitable, uses a manually chosen 1-20,000 kcal/day base target rather than claiming an expenditure estimate; it needs no height, formula or activity. Neither method reads the Weight journal or infers an equation parameter from Clerk.
+
+The adjustment is user-entered (no deficit/surplus presets); protein can be edited per kg or as fixed daily grams, fat share as a percentage, and fibre as daily grams. The UI converts the displayed fat percentage to the API's `fat_share` fraction. The backend validates all numeric limits and rejects unsupported ages, out-of-range final targets or infeasible nutrient allocations with `422` instead of changing a user's inputs. These bounds are technical, not personalized safety limits. Both methods remain provisional and are not medical advice; logged consumption is not implemented.
+
+An unavailable session (`401`), a forbidden request (`403`) and an unavailable service, storage or authentication (`503`) are distinct failures. Network and calculation errors remain visible, carry a request ID when available, and support retry where access permits. Editing a field clears the previous result; an older in-flight response cannot replace a preview for newer inputs.
+
+## Nutrition plans
+
+After a **new calculator estimate**, a signed-in user can edit seven Monday-to-Sunday kcal values starting at the chosen average. The form shows the remaining weekly kcal without changing another day; it sends the complete, unchanged new estimate response and a balanced seven-integer allocation to `POST /api/nutrition/v1/plans/allocations/preview`. This stateless review recomputes each day's kcal, protein, fat, carbohydrate, fibre and delta on the server, along with the full-week total, risk reason labels and neutral notice. It needs no plan storage; unbalanced, infeasible or stale drafts cannot be saved. The review is provisional and is not food consumed.
+
+Server reasons cover a calculated target below **estimated** maintenance, a manual downward adjustment below the **user-entered base** (not a measured deficit) and uneven weekdays. Each save or replacement with reasons needs its own unchecked, explicit acknowledgment; it resets after edits and cannot be treated as a safety clearance. The user must confirm or correct the browser-suggested IANA time zone; no UTC fallback is assumed. To change the chosen average, run a fresh estimate preview and explicitly replace the active plan, rather than silently recalculating a saved snapshot.
+
+`GET /api/nutrition/v1/plans/active` provides the active plan and revision; `GET /api/nutrition/v1/plans?limit=10&before_version=...` pages through saved versions. **Editing an active saved version** sends its current ID and revision with seven weekdays to the separate DB-backed `POST /api/nutrition/v1/plans/{plan_id}/allocations/preview`, never its accepted estimate snapshot. The server reviews the persisted snapshot without recalculating historical suggestions or notices; this review requires Nutrition storage but does not change a plan. A changed revision or inactive ID requires refreshing active/history and a fresh review; the UI cannot fall back to the stateless route. After a current review, `POST /api/nutrition/v1/plans` saves only when no plan is active; `POST /api/nutrition/v1/plans/active/replacements` explicitly replaces an active version while retaining the ended snapshot in history. That replacement still submits the exact immutable accepted preview from the saved active version, even if estimate copy or defaults have changed. `POST /api/nutrition/v1/plans/active/end` requires confirmation and leaves saved history intact. Successful writes refetch active/history. The service also supports individual-plan and calendar-projection reads; this UI does not expose a calendar or intake log.
+
+Saved-plan reads, writes and active-snapshot allocation review require configured, migrated Nutrition PostgreSQL. `401` means the session cannot be verified; `403` means the service forbids the request. `404` on saved-allocation review means that ID is no longer the user's active plan, `409` means a stale new estimate preview, revision or lifecycle, `422` means invalid or infeasible inputs or missing risk acknowledgment, and `503` means the service is unavailable, including storage or authentication problems; request IDs are shown when available. Failing active/history reads do not hide the storage-independent calculator or invent an empty history. An unsuccessful write never appears as a saved plan.
 
 ## Commands
 
@@ -60,7 +90,7 @@ Use the PC's address, not the phone's `localhost`. Keep `VITE_API_URL=/api` so A
 - **React 19 + TypeScript** render the interface with typed components.
 - **Vite** provides the development server and production build.
 - **React Router 7**, in declarative mode, owns navigation. Routes are defined in `src/routes/`.
-- **TanStack Query 5** owns weight history and mutations. Successful saves and deletions invalidate the history query so it is fetched again from the API.
+- **TanStack Query 5** owns weight history and mutations as well as nutrition options, estimate/allocation previews and saved-plan reads/mutations. Successful weight saves and deletions invalidate the weight history; successful Nutrition plan writes invalidate active/history. Estimate and allocation previews create no persistent state.
 - **Tailwind CSS 4** uses the Vite plugin and the existing semantic design tokens. Global layout styles live in `src/app/styles.css`.
 - **Manrope** is bundled locally through Fontsource. The app does not request fonts from a third-party server.
 - **Zustand** is intentionally deferred until there is shared client state that warrants a store. Keep form state local and server data in TanStack Query.
@@ -73,10 +103,14 @@ src/
     config/           # Environment access
     layout/           # App header, navigation, content and footer
     providers/        # Query client and browser router
-    ui/               # App-level UI and design tokens
+    ui/               # Landing page, app-level UI and design tokens
     styles.css
-  entities/           # WeightLog and request types matching the API
+  entities/           # Weight and Nutrition request/response types matching their APIs
   features/
+    nutrition/
+      api/            # Authenticated options, preview, allocation and plan requests
+      components/     # Calculator, weekday editor, saved plans and UI tests
+      preview-form.ts # Input parsing and client-side validation
     weight/
       api/            # HTTP requests, query options and mutation hooks
       components/     # Weight page, entry form and user-flow tests
@@ -100,7 +134,7 @@ Copy `.env.example` to `.env.local` if you want to override the default:
 VITE_API_URL=/api
 ```
 
-`src/app/config/env.ts` is the central accessor. Requests use this base URL, followed by `/weight-logs`. Keep `/api` for the built-in Vite and Nginx proxies; both remove the `/api` prefix before forwarding to FastAPI. A separate API origin requires that API to allow the browser origin through CORS.
+`src/app/config/env.ts` is the central browser accessor. Weight requests use this base URL followed by `/weight-logs` or `/weight-goals`; Nutrition requests use `/nutrition/v1/estimates/...` and `/nutrition/v1/plans...`. Keep `VITE_API_URL=/api` for the Vite proxy: its nutrition-specific route maps to the Nutrition service's `/api/v1`, while its generic route removes `/api` before forwarding to the weight service. Nginx routes the same prefixes to separate services in Compose. A separate API origin requires that API to allow the browser origin through CORS.
 
 Vite substitutes `VITE_*` values into the browser bundle. They are public configuration, never a place for database passwords, API secrets or private tokens.
 
@@ -108,7 +142,7 @@ Vite substitutes `VITE_*` values into the browser bundle. They are public config
 
 The [brand guide](docs/brand/README.md) explains the asset locations. Colors remain in the [token files](src/app/ui/tokens/README.md).
 
-The app uses browser-history routing. Nginx serves `index.html` for app routes such as `/weight`, while forwarding API calls separately. Another static host must provide the same routing behavior. The app assumes hosting at the domain root.
+The app uses browser-history routing. Nginx serves `index.html` for app routes such as `/weight` and `/nutrition`. Its more-specific `/api/nutrition/v1/...` route resolves `nutrition-service:8000` at request time and forwards to `/api/v1/...`, including bearer credentials and request IDs; the exact bare prefix returns `404` rather than falling into the Weight proxy. Other `/api/...` requests still go to `weight-service:8000`. Hub Compose now supplies both services; another static host must provide both app-route fallback and separate Nutrition/Weight API proxying. The app assumes hosting at the domain root.
 
 The manifest provides the name, colors and icons. It does not add offline functionality or sync on its own. PWA capabilities and HTTPS deployment will be addressed separately.
 
@@ -120,7 +154,7 @@ npm run lint
 npm run build
 ```
 
-The component tests use mocked HTTP responses and cover loading, failures, creation, editing, duplicate dates and deletion confirmation. They do not need a running database. Use the complete Compose stack to verify the browser-to-PostgreSQL flow.
+The component tests use mocked HTTP responses and cover weight loading, failures, creation, editing, duplicate dates and deletion confirmation, plus Nutrition method selection, source-labeled inputs, auth/errors, weekday review, risk acknowledgment, plan lifecycle, storage failures, concurrency and stale-result handling. They do not need a running database. Hub Compose wires both APIs and migrates their separate databases; browser-to-service checks still require matching Clerk authentication configuration.
 
 ## Authentication
 
@@ -128,7 +162,7 @@ This is a Vite SPA with declarative React Router, using `@clerk/react`. Sign-in 
 
 Set `VITE_CLERK_PUBLISHABLE_KEY` in ignored `.env.local` for Vite. For Docker, pass it as the build argument of the same name (the shared Compose file does this). The publishable key is public and bundled into the app. Never add `CLERK_SECRET_KEY` to frontend configuration. Rebuild the container after changing the publishable key. Configure matching issuer and allowed web origins in the weight-service.
 
-Query caches and mounted private UI are isolated by Clerk user and session. Signing out or switching accounts discards the previous cache and form state. Provider IDs are not sent as ownership fields; the API derives ownership from the validated token and maps it to an internal Emberpath UUID.
+Query caches and mounted private UI are isolated by Clerk user and session. Signing out or switching accounts discards the previous cache and form state. Provider IDs are not sent as ownership fields; each API verifies the token and scopes saved data to the authenticated user.
 
 ## Personal weight goals
 
