@@ -1,4 +1,4 @@
-.weight-transfer { margin-top: 20px; }
+.weight-transfer { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--ep-semantic-border-subtle); }
 .transfer-controls { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; }
 .transfer-controls label, .transfer-dialog > label { display: grid; gap: 8px; font-size: .875rem; }
 .weight-transfer select, .transfer-dialog select, .transfer-dialog input { min-height: 44px; max-width: 100%; padding: 10px; border: 1px solid var(--ep-semantic-border-control); border-radius: 8px; background: var(--ep-semantic-background); color: var(--ep-semantic-text-primary); }

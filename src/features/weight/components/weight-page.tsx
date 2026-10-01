@@ -2,13 +2,15 @@ import { lazy, Suspense, useState } from 'react'
 import { useIsMutating } from '@tanstack/react-query'
 import type { WeightLog } from '@/entities/weight-log'
 import { useDeleteWeightLog, useWeightLogs } from '../api/weight-logs'
-import { filterMeasurements, periodBounds, periods, type Period } from '../weight-range'
+import { filterMeasurements, periodBounds, type Period } from '../weight-range'
+import { goalPreviewEnd } from '../weight-chart-window'
 import { useActiveWeightGoal } from '../api/weight-goals'
-import { WeightGoalPanel } from './weight-goal'
+import { WeightGoalTile } from './weight-goal'
 import { WeightSummary } from './weight-summary'
 import { WeightTransfer } from './weight-transfer'
 import { WeightHistory } from './weight-history'
 import { WeightLogDialog } from './weight-log-dialog'
+import { WeightWorkspace } from './weight-workspace'
 import './weight-dashboard.css'
 
 const WeightChart = lazy(() => import('./weight-chart').then((module) => ({ default: module.WeightChart })))
@@ -37,27 +39,25 @@ export function WeightPage() {
     <title>Weight · Emberpath</title>
     <div className="page-heading">
       <div><h1 id="weight-title">Weight</h1><p className="page-description">A place to follow your progress, at your pace.</p></div>
-      <button className="log-button" disabled={busy} onClick={() => { setDialog({ entry: null }); setMessage('') }}>Log weight</button>
     </div>
-    <div className="period-toolbar">
-      <div className="period-buttons" role="group" aria-label="Measurement period">
-        {periods.map((option) => <button key={option.value} aria-label={option.label} aria-pressed={period === option.value} onClick={() => setPeriod(option.value)}>{option.short}</button>)}
-      </div>
-      <label className="period-select">Period<select value={period} onChange={(event) => setPeriod(event.target.value as Period)}>{periods.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-      <span className="unit-label">{periods.find((option) => option.value === period)?.label}{history.data && ` · ${entries.length} measurements`}</span>
-    </div>
+    <WeightSummary start={bounds.start} end={bounds.end}><WeightGoalTile /></WeightSummary>
+    <WeightWorkspace
+      period={period}
+      onPeriodChange={setPeriod}
+      measurementCount={history.data && entries.length}
+      busy={busy}
+      onLog={() => { setDialog({ entry: null }); setMessage('') }}
+      notice={<>
+        <p className="save-status" role="status">{message}</p>
+        {remove.error && <p className="form-error" role="alert">{remove.error.message}</p>}
+        {history.isPending && <p className="history-notice" role="status">Loading measurements…</p>}
+        {history.isError && <div className="history-notice"><p className="form-error" role="alert">{history.error.message}</p><button className="secondary-button" disabled={history.isFetching} onClick={() => void history.refetch()}>{history.isFetching ? 'Retrying…' : 'Retry'}</button></div>}
+        {history.data?.length === 0 && <p className="history-notice">No measurements yet</p>}
+      </>}
+      chart={history.data && <Suspense fallback={<div className="chart-empty" role="status">Loading chart…</div>}><WeightChart goal={goal.isError ? null : goal.data} entries={entries} start={bounds.start} end={bounds.end} previewEnd={goalPreviewEnd(period, now)} /></Suspense>}
+      history={history.data && <WeightHistory period={period} entries={entries} busy={busy} onEdit={(entry) => { setDialog({ entry }); setMessage('') }} onDelete={deleteEntry} />}
+    />
     <WeightTransfer busy={busy} />
-    <WeightGoalPanel />
-    <WeightSummary start={bounds.start} end={bounds.end} />
-    {history.isPending && <p className="history-notice" role="status">Loading measurements…</p>}
-    {history.isError && <div className="history-notice"><p className="form-error" role="alert">{history.error.message}</p><button className="secondary-button" disabled={history.isFetching} onClick={() => void history.refetch()}>{history.isFetching ? 'Retrying…' : 'Retry'}</button></div>}
-    {history.data && <>
-      {history.data.length === 0 && <p className="history-notice">No measurements yet</p>}
-      <Suspense fallback={<div className="weight-chart-panel chart-empty" role="status">Loading chart…</div>}><WeightChart goal={goal.isError ? null : goal.data} entries={entries} start={bounds.start} end={bounds.end} /></Suspense>
-      <WeightHistory key={period} entries={entries} busy={busy} onEdit={(entry) => { setDialog({ entry }); setMessage('') }} onDelete={deleteEntry} />
-    </>}
-    <p className="save-status" role="status">{message}</p>
-    {remove.error && <p className="form-error" role="alert">{remove.error.message}</p>}
     {dialog && <WeightLogDialog entry={dialog.entry} busy={busy} onClose={() => setDialog(null)} onSaved={() => {
       setMessage(dialog.entry ? 'Measurement updated.' : 'Measurement saved.')
       setDialog(null)

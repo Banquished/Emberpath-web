@@ -1,4 +1,5 @@
 import type { ActivityCategory, FormulaParameter, PreviewOptions, PreviewRequest, PreviewMethod, ProteinSelection } from '@/entities/nutrition-preview'
+import { proteinLimits } from './protein-review'
 
 export type PreviewFormValues = {
   method: PreviewMethod | ''
@@ -57,11 +58,11 @@ export function validatePreview(values: PreviewFormValues): { request: PreviewRe
   const age = read('ageYears', 'Age in years', 19, 120, true)
   const enteredAge = Number(values.ageYears)
   if (values.ageYears.trim() && Number.isInteger(enteredAge) && enteredAge < 19) errors.ageYears = 'Age under 19 is not supported by this calculator.'
-  const weight = read('weightKg', 'Weight in kg', 20, 400)
+  const weight = read('weightKg', 'Weight in kg', ...proteinLimits.weightKg)
   const adjustment = read('adjustmentKcal', 'Calorie adjustment in kcal/day', -20000, 20000, true)
   const proteinValue = values.proteinMode === 'per_kg'
-    ? read('proteinPerKg', 'Protein in g/kg/day', 0.01, 5)
-    : read('proteinDailyGrams', 'Protein in g/day', 0.01, 2000)
+    ? read('proteinPerKg', 'Protein in g/kg/day', ...proteinLimits.perKg)
+    : read('proteinDailyGrams', 'Protein in g/day', ...proteinLimits.dailyGrams)
   const fatPercent = read('fatPercent', 'Fat share in percent', 0, 100)
   const fibre = read('fibreGrams', 'Fibre in g/day', 0, 100)
   const height = values.method === 'nasem_2023_adult_tee' ? read('heightCm', 'Height in cm', 100, 250) : null

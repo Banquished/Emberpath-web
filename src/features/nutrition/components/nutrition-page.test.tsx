@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PreviewOptions, PreviewRequest, PreviewResponse } from '@/entities/nutrition-preview'
@@ -13,7 +13,11 @@ const auth = vi.hoisted(() => ({
   getToken: vi.fn<() => Promise<string | null>>(),
 }))
 vi.mock('@clerk/react', () => ({ useAuth: () => auth }))
-vi.mock('./nutrition-plans', () => ({ NutritionPlans: () => null }))
+vi.mock('./nutrition-plans', () => ({ NutritionActivePlan: () => null, NutritionHistory: () => null }))
+vi.mock('../api/nutrition-plans', () => ({
+  useActiveNutritionPlan: () => ({ isSuccess: true, isFetching: false, data: { revision: 0, plan: null } }),
+  useNutritionPlanHistory: () => ({ isSuccess: true, isFetching: false, data: { pages: [{ revision: 0, plans: [], next_before_version: null }] } }),
+}))
 
 const suggestions: PreviewOptions['starting_suggestions'] = {
   protein_g_per_kg: {
@@ -156,6 +160,23 @@ beforeEach(() => {
 })
 
 describe('authenticated nutrition preview', () => {
+  it('opens and closes source scope with a named, focusable disclosure rather than hover', async () => {
+    mockService()
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByRole('form', { name: 'Nutrition preview' })
+    const summary = screen.getByText('Source and scope for protein')
+    const disclosure = summary.closest('details')
+    expect(disclosure).not.toHaveAttribute('open')
+    summary.focus()
+    expect(summary).toHaveFocus()
+    await user.click(summary)
+    expect(disclosure).toHaveAttribute('open')
+    expect(screen.getByRole('link', { name: 'doi:10.1186/s12970-017-0177-8' })).toHaveAttribute('href', 'https://pubmed.ncbi.nlm.nih.gov/28642676/')
+    await user.click(summary)
+    expect(disclosure).not.toHaveAttribute('open')
+  })
+
   it('loads source-labeled options and renders separate calculated estimates and chosen targets without saving', async () => {
     const fetchMock = mockService()
     const user = userEvent.setup()
@@ -164,11 +185,16 @@ describe('authenticated nutrition preview', () => {
     await fillCalculated(user)
     expect(screen.getByRole('spinbutton', { name: 'Fat share (% of daily calories)' })).toHaveValue(30)
     expect(screen.getByRole('spinbutton', { name: 'Fibre (g/day)' })).toHaveValue(25)
+    await user.click(screen.getByText('Source and scope for protein'))
+    await user.click(screen.getByText('Source and scope for fat'))
+    await user.click(screen.getByText('Source and scope for fibre'))
+    await user.click(screen.getByText('Activity category PAL ranges and source'))
     expect(screen.getByRole('link', { name: 'doi:10.1186/s12970-017-0177-8' })).toHaveAttribute('href', 'https://pubmed.ncbi.nlm.nih.gov/28642676/')
     expect(screen.getByText(/group-level plateau near 1.6 g\/kg\/day/)).toBeInTheDocument()
     expect(screen.getByText(/30% is a product allocation choice/)).toBeInTheDocument()
     expect(screen.getByText(/food sources and actual intake are not assessed/)).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: 'Active (PAL 1.68 to <1.85)' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Active' })).toBeInTheDocument()
+    expect(screen.getByText('Active: PAL 1.68 to <1.85')).toBeInTheDocument()
     expect(screen.queryByRole('radio', { name: /Mifflin-St Jeor/ })).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Preview daily targets' }))
     const result = within(await screen.findByRole('region', { name: 'Provisional daily target preview' }))
@@ -179,6 +205,7 @@ describe('authenticated nutrition preview', () => {
     expect(result.getByText('Chosen daily calorie target').parentElement).toHaveTextContent('2,976 kcal/day')
     expect(result.getByText('Protein').parentElement).toHaveTextContent('160 g/day')
     expect(result.getByText('Carbohydrate').parentElement).toHaveTextContent('360.8 g/day')
+    await user.click(result.getByText('Method, normalized inputs and sources'))
     expect(result.getByRole('link', { name: /Mifflin-St Jeor/ })).toHaveAttribute('href', 'https://doi.org/10.1093/ajcn/51.2.241')
     expect(result.getByRole('link', { name: /2023 adult TEE/ })).toHaveAttribute('href', 'https://www.nationalacademies.org/read/26818/chapter/2')
     expect(result.getByText(/age 30 years, manually entered weight 80 kg, height 180 cm, male formula, active activity/)).toBeInTheDocument()
@@ -195,6 +222,7 @@ describe('authenticated nutrition preview', () => {
     const user = userEvent.setup()
     renderPage()
     await fillManual(user)
+    await user.click(screen.getByText('About Enter a manual base target (scope and source)'))
     expect(screen.getByText(/User-entered target when calculated methods are unsuitable/)).toBeInTheDocument()
     expect(screen.getByText(/not applied in fixed mode/)).toBeInTheDocument()
     expect(screen.queryByRole('combobox', { name: 'Formula parameter' })).not.toBeInTheDocument()
@@ -383,6 +411,7 @@ describe('authenticated nutrition preview', () => {
     await fillCalculated(user)
     await user.click(screen.getByRole('button', { name: 'Preview daily targets' }))
     expect(await screen.findByRole('region', { name: 'Provisional daily target preview' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Back to inputs' }))
     const weight = screen.getByRole('spinbutton', { name: 'Manually entered weight (kg)' })
     await user.clear(weight)
     await user.type(weight, '81')
@@ -395,6 +424,170 @@ describe('authenticated nutrition preview', () => {
     await act(async () => { resolvePending(Response.json(calculatedResult)); await pending })
     expect(screen.queryByRole('region', { name: 'Provisional daily target preview' })).not.toBeInTheDocument()
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+
+  it('increments protein by exactly 0.1 with explicit keyboard-accessible controls without snapping manual precision', async () => {
+    const fetchMock = mockService((input) => Response.json({ ...manualResult, inputs: input }))
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByRole('form', { name: 'Nutrition preview' })
+    const protein = screen.getByRole('spinbutton', { name: 'Protein (g/kg/day)' })
+    expect(protein).toHaveAttribute('step', 'any')
+    await user.click(screen.getByRole('button', { name: 'Increase protein by 0.1 g/kg/day' }))
+    expect(protein).toHaveValue(1.7)
+    await user.click(screen.getByRole('button', { name: 'Decrease protein by 0.1 g/kg/day' }))
+    expect(protein).toHaveValue(1.6)
+    await user.keyboard('{Enter}')
+    expect(protein).toHaveValue(1.5)
+    await user.clear(protein)
+    await user.type(protein, '1.65')
+    expect((protein as HTMLInputElement).validity.stepMismatch).toBe(false)
+    await user.click(screen.getByRole('button', { name: 'Increase protein by 0.1 g/kg/day' }))
+    expect(protein).toHaveValue(1.75)
+    await user.click(screen.getByRole('button', { name: 'Decrease protein by 0.1 g/kg/day' }))
+    expect(protein).toHaveValue(1.65)
+    await user.click(screen.getByRole('radio', { name: 'Enter a manual base target' }))
+    await user.type(screen.getByRole('spinbutton', { name: 'Age (completed years)' }), '19')
+    await user.type(screen.getByRole('spinbutton', { name: 'Manually entered weight (kg)' }), '80')
+    await user.type(screen.getByRole('spinbutton', { name: 'Manual base target (kcal/day)' }), '2400')
+    await user.click(screen.getByRole('button', { name: 'Preview daily targets' }))
+    expect(await screen.findByRole('region', { name: 'Provisional daily target preview' })).toBeInTheDocument()
+    expect(submittedRequests(fetchMock)[0]?.strategy.protein).toEqual({ mode: 'per_kg', g_per_kg: 1.65 })
+  })
+
+  it('steps protein by exactly 0.1 from the field itself with the up and down arrow keys', async () => {
+    mockService()
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByRole('form', { name: 'Nutrition preview' })
+    const protein = screen.getByRole('spinbutton', { name: 'Protein (g/kg/day)' })
+    expect(protein).toHaveAccessibleDescription(/up and down arrow keys/)
+    await user.click(protein)
+    await user.keyboard('{ArrowUp}')
+    expect(protein).toHaveValue(1.7)
+    await user.keyboard('{ArrowDown}')
+    expect(protein).toHaveValue(1.6)
+    await user.keyboard('{ArrowDown}')
+    expect(protein).toHaveValue(1.5)
+    await user.clear(protein)
+    await user.type(protein, '1.65')
+    await user.keyboard('{ArrowUp}')
+    expect(protein).toHaveValue(1.75)
+    await user.clear(protein)
+    await user.type(protein, '5')
+    await user.keyboard('{ArrowUp}')
+    expect(protein).toHaveValue(5)
+    await user.keyboard('{ArrowDown}')
+    expect(protein).toHaveValue(4.9)
+  })
+
+  it.each(['.5', '5e-1'])('supports valid manual protein representation %s with controls and Arrow keys without normalizing on change', async (value) => {
+    mockService()
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByRole('form', { name: 'Nutrition preview' })
+    const protein = screen.getByRole('spinbutton', { name: 'Protein (g/kg/day)' }) as HTMLInputElement
+    const increase = screen.getByRole('button', { name: 'Increase protein by 0.1 g/kg/day' })
+    const decrease = screen.getByRole('button', { name: 'Decrease protein by 0.1 g/kg/day' })
+    fireEvent.change(protein, { target: { value } })
+    expect(protein.value).toBe(value)
+    expect(protein.valueAsNumber).toBe(0.5)
+    expect(protein.validity.valid).toBe(true)
+    expect(increase).toBeEnabled()
+    expect(decrease).toBeEnabled()
+    await user.click(increase)
+    expect(protein.value).toBe('0.6')
+    fireEvent.change(protein, { target: { value } })
+    await user.click(decrease)
+    expect(protein.value).toBe('0.4')
+    fireEvent.change(protein, { target: { value } })
+    await user.click(protein)
+    await user.keyboard('{ArrowUp}')
+    expect(protein.value).toBe('0.6')
+    fireEvent.change(protein, { target: { value } })
+    await user.keyboard('{ArrowDown}')
+    expect(protein.value).toBe('0.4')
+  })
+
+  it('shows the strict protein review cue near either input but never for empty or technically invalid values', async () => {
+    mockService()
+    const user = userEvent.setup()
+    renderPage()
+    await fillManual(user)
+    const weight = screen.getByRole('spinbutton', { name: 'Manually entered weight (kg)' })
+    const grams = screen.getByRole('spinbutton', { name: 'Protein (g/day)' })
+    for (const [value, warns] of [['79.2', true], ['80', false], ['240', false], ['240.8', true], ['0', false], ['', false]] as const) {
+      await user.clear(grams)
+      if (value) await user.type(grams, value)
+      if (warns) expect(screen.getByText(/outside the 1-3 g\/kg\/day product review band/)).toBeInTheDocument()
+      else expect(screen.queryByText(/outside the 1-3 g\/kg\/day product review band/)).not.toBeInTheDocument()
+    }
+    await user.clear(weight)
+    await user.type(weight, '70.1')
+    for (const [value, warns] of [['70.09999999999998', true], ['70.1', false], ['70.10000000000001', false], ['210.29999999999998', false], ['210.3', false], ['210.30000000000004', true]] as const) {
+      await user.clear(grams)
+      await user.type(grams, value)
+      expect(screen.queryByText(/outside the 1-3 g\/kg\/day product review band/) !== null).toBe(warns)
+    }
+    await user.click(screen.getByRole('radio', { name: 'Per kg of entered weight' }))
+    const perKg = screen.getByRole('spinbutton', { name: 'Protein (g/kg/day)' })
+    for (const [value, warns] of [['0.99', true], ['1', false], ['3', false], ['3.01', true], ['5.01', false]] as const) {
+      await user.clear(perKg)
+      await user.type(perKg, value)
+      if (warns) expect(screen.getByText(/outside the 1-3 g\/kg\/day product review band/)).toBeInTheDocument()
+      else expect(screen.queryByText(/outside the 1-3 g\/kg\/day product review band/)).not.toBeInTheDocument()
+    }
+    await user.clear(perKg)
+    await user.type(perKg, '3.01')
+    await user.clear(weight)
+    expect(screen.queryByText(/outside the 1-3 g\/kg\/day product review band/)).not.toBeInTheDocument()
+  })
+
+  it.each([
+    [70.1, false],
+    [210.3, false],
+    [70.09999999999998, true],
+    [210.30000000000004, true],
+  ])('uses accepted decimal inputs for the preview cue at %s g, not rounded macro totals or the draft weight', async (grams, warns) => {
+    const accepted: PreviewResponse = {
+      ...manualResult,
+      inputs: { ...manualRequest, weight_kg: 70.1, strategy: { ...manualRequest.strategy, protein: { mode: 'daily_grams', g_per_day: grams } } },
+      daily_target: { ...manualResult.daily_target, protein_g: Math.round(grams * 100) / 100 },
+    }
+    const fetchMock = mockService(() => Response.json(accepted))
+    const user = userEvent.setup()
+    renderPage()
+    await fillManual(user)
+    await user.click(screen.getByRole('button', { name: 'Preview daily targets' }))
+    const result = within(await screen.findByRole('region', { name: 'Provisional daily target preview' }))
+    expect(result.queryByText(/outside the 1-3 g\/kg\/day product review band/) !== null).toBe(warns)
+    expect(submittedRequests(fetchMock)[0]?.weight_kg).toBe(80)
+  })
+
+  it('does not block a technically valid high fixed-gram preview and uses the accepted response inputs for review', async () => {
+    const highProtein: PreviewResponse = {
+      ...manualResult,
+      inputs: { ...manualRequest, strategy: { ...manualRequest.strategy, protein: { mode: 'daily_grams', g_per_day: 240.8 } } },
+      daily_target: { ...manualResult.daily_target, protein_g: 240.8, carbohydrate_g: 179.2 },
+    }
+    const fetchMock = mockService(() => Response.json(highProtein))
+    const user = userEvent.setup()
+    renderPage()
+    await fillManual(user)
+    const protein = screen.getByRole('spinbutton', { name: 'Protein (g/day)' })
+    await user.clear(protein)
+    await user.type(protein, '240.8')
+    expect(protein).toHaveAccessibleDescription(/outside the 1-3 g\/kg\/day product review band/)
+    expect(protein).not.toHaveAttribute('aria-invalid')
+    await user.click(screen.getByRole('button', { name: 'Preview daily targets' }))
+    const result = within(await screen.findByRole('region', { name: 'Provisional daily target preview' }))
+    expect(result.getByText(/outside the 1-3 g\/kg\/day product review band/)).toBeInTheDocument()
+    expect(result.getByText('Protein').parentElement).toHaveTextContent('240.8 g/day')
+    expect(submittedRequests(fetchMock)[0]?.strategy.protein).toEqual({ mode: 'daily_grams', g_per_day: 240.8 })
+    await user.click(screen.getByRole('button', { name: 'Back to inputs' }))
+    expect(screen.getByRole('button', { name: 'Continue to accepted preview' })).toBeInTheDocument()
+    await user.clear(screen.getByRole('spinbutton', { name: 'Manually entered weight (kg)' }))
+    expect(screen.queryByRole('button', { name: 'Continue to accepted preview' })).not.toBeInTheDocument()
   })
 
   it("does not reuse another session's nutrition options in a shared query client", async () => {

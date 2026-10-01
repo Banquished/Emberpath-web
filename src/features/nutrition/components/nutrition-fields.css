@@ -1,0 +1,6 @@
+/* Chrome renders inert spin buttons for a step="any" number field: the arrows and the spinner do nothing, or
+   jump by a whole unit. The stepped protein field routes stepping through its own exact-tenth controls, so the
+   misleading native spinner is removed in favour of the visible, labelled - and + buttons and the arrow keys. */
+.stepped-number { appearance: textfield; -moz-appearance: textfield; }
+.stepped-number::-webkit-inner-spin-button,
+.stepped-number::-webkit-outer-spin-button { appearance: none; -webkit-appearance: none; margin: 0; }

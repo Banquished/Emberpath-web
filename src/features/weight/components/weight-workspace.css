@@ -1,0 +1,29 @@
+.weight-workspace { min-width: 0; margin-bottom: 16px; padding: 0 20px 16px; border: 1px solid var(--ep-semantic-border-subtle); border-radius: 16px; background: var(--ep-semantic-surface); }
+.workspace-header { display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 0 16px; padding-top: 8px; border-bottom: 1px solid var(--ep-semantic-border-subtle); }
+.workspace-header .log-button { margin-bottom: 8px; }
+.workspace-tabs { display: flex; gap: 4px; margin-bottom: -1px; }
+.workspace-tab { min-width: 88px; min-height: 52px; padding-inline: 16px; border-bottom: 3px solid transparent; color: var(--ep-semantic-text-secondary); font-weight: 650; }
+.workspace-tab:hover { color: var(--ep-semantic-text-primary); }
+.workspace-tab[aria-selected=true] { border-bottom-color: var(--ep-semantic-primary); color: var(--ep-semantic-text-primary); }
+.workspace-tab:focus-visible { outline-offset: -4px; }
+.period-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; margin-block: 12px 8px; }
+.period-buttons { display: flex; gap: 4px; padding: 4px; border: 1px solid var(--ep-semantic-border-subtle); border-radius: 12px; background: var(--ep-semantic-background); }
+.period-buttons button { min-width: 48px; min-height: 44px; border-radius: 8px; color: var(--ep-semantic-text-secondary); font-size: .875rem; font-weight: 600; }
+.period-buttons button[aria-pressed=true] { color: var(--ep-semantic-selected-foreground); background: var(--ep-semantic-selected); }
+.period-select { display: none; }
+.workspace-panel { min-width: 0; }
+.weight-workspace .history-notice { padding: 12px 0; }
+.weight-workspace .history-notice .form-error { margin: 0 0 12px; }
+@media (max-width: 640px) {
+  .weight-workspace { padding: 0 12px 12px; border-radius: 14px; }
+  .workspace-header { gap: 0 8px; }
+  .workspace-tab { min-width: 0; padding-inline: 14px; }
+  .workspace-header .log-button { padding-inline: 14px; }
+  .period-buttons { display: none; }
+  .period-select { display: flex; align-items: center; gap: 12px; font-size: .875rem; }
+  .period-select select { min-height: 44px; border: 1px solid var(--ep-semantic-border-control); border-radius: 8px; padding: 8px 12px; background: var(--ep-semantic-background); color: var(--ep-semantic-text-primary); }
+  .period-toolbar > .unit-label { display: none; }
+}
+@media (max-width: 359px) {
+  .workspace-header .log-button { flex: 1 0 100%; }
+}

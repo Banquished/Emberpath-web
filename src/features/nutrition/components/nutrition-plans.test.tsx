@@ -1,12 +1,14 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ActiveAllocationPreviewRequest, ActivePlanResponse, AllocationPreviewRequest, PlanHistoryResponse, SavePlanRequest, SavedPlan } from '@/entities/nutrition-plan'
-import type { PreviewOptions, PreviewResponse } from '@/entities/nutrition-preview'
+import type { PreviewOptions, PreviewResponse, ProteinSelection } from '@/entities/nutrition-preview'
+import { useActiveNutritionPlan, useNutritionPlanHistory } from '../api/nutrition-plans'
 import { NutritionPage } from './nutrition-page'
-import { NutritionPlans, type PlanEditorMode } from './nutrition-plans'
+import { NutritionPlanEditor, type AllocationStep } from './nutrition-plan-editor'
+import { NutritionActivePlan, NutritionHistory } from './nutrition-plans'
 import { downwardManualPreview, flatAllocation, manualPreview, savedPlan, suggestions, unevenAllocation, unevenDays } from '../test/plan-fixtures'
 
 const optionsFixture: PreviewOptions = {
@@ -104,21 +106,68 @@ function callsTo(fetchMock: ReturnType<typeof mockPlanService>['fetchMock'], url
   return fetchMock.mock.calls.filter(([path]) => path === url)
 }
 
-function renderPlans(preview: PreviewResponse | null = manualPreview, initialMode: PlanEditorMode = preview ? 'new' : null) {
+function mockWorkspace(initialActive: ActivePlanResponse = { revision: 0, plan: null }) {
+  const { service, fetchMock: planFetch } = mockPlanService(initialActive)
+  const fetchMock = vi.fn(async (url: string, init?: RequestInit): Promise<Response> => {
+    if (url === '/api/nutrition/v1/estimates/options') return Response.json(optionsFixture)
+    if (url === '/api/nutrition/v1/estimates/preview' && init?.method === 'POST') return Response.json(manualPreview)
+    return planFetch(url, init)
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  return { service, planFetch, fetchMock }
+}
+
+function renderWorkspace(client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })) {
+  const view = render(<QueryClientProvider client={client}><NutritionPage /></QueryClientProvider>)
+  return { client, view }
+}
+
+async function fillNewManual(user: ReturnType<typeof userEvent.setup>) {
+  await screen.findByRole('form', { name: 'Nutrition preview' })
+  await user.click(screen.getByRole('radio', { name: 'Enter a manual base target' }))
+  await user.type(screen.getByRole('spinbutton', { name: 'Age (completed years)' }), '19')
+  await user.type(screen.getByRole('spinbutton', { name: 'Manually entered weight (kg)' }), '80')
+  await user.type(screen.getByRole('spinbutton', { name: 'Manual base target (kcal/day)' }), '2400')
+}
+
+function renderPlans(preview: PreviewResponse | null = manualPreview) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   function Harness() {
     const [accepted, setAccepted] = useState(preview)
-    const [mode, setMode] = useState(initialMode)
-    return <QueryClientProvider client={client}>
-      <NutritionPlans acceptedPreview={accepted} previewRevision={1} mode={mode} onModeChange={setMode} onConfirmedSave={() => { setAccepted(null); setMode(null) }} />
-    </QueryClientProvider>
+    const [step, setStep] = useState<AllocationStep>('weekdays')
+    const [notice, setNotice] = useState('')
+    const active = useActiveNutritionPlan()
+    const history = useNutritionPlanHistory()
+    return <>
+      <NutritionActivePlan active={active} history={history} notice={notice} showFailure onMessageChange={setNotice} onNewCalculation={() => {}} />
+      {accepted && <NutritionPlanEditor
+        acceptedPreview={accepted}
+        activeState={active.isSuccess ? active.data : null}
+        step={step}
+        onBack={() => step === 'review' ? setStep('weekdays') : setAccepted(null)}
+        onReview={() => setStep('review')}
+        onSaved={(plan) => { setNotice(`Nutrition plan version ${plan.version} saved. The previous active version remains in history.`); setAccepted(null) }}
+        onRefreshActive={() => { setAccepted(null); void active.refetch(); void history.refetch() }}
+      />}
+      <NutritionHistory history={history} />
+    </>
   }
-  const view = render(<Harness />)
+  const view = render(<QueryClientProvider client={client}><Harness /></QueryClientProvider>)
   return { client, view }
 }
 
 async function reviewedFlat() {
+  const next = await screen.findByRole('button', { name: 'Next: Review and save' })
+  await waitFor(() => expect(next).toBeEnabled())
+  await userEvent.setup().click(next)
   return within(await screen.findByRole('region', { name: 'Provisional weekday targets' }))
+}
+
+async function confirmZone(user: ReturnType<typeof userEvent.setup>, zone = 'Europe/Oslo') {
+  const field = screen.getByRole('textbox', { name: 'Plan calendar time zone (IANA)' })
+  await user.clear(field)
+  await user.type(field, zone)
+  await user.click(screen.getByRole('checkbox', { name: /I confirm this IANA calendar time zone/ }))
 }
 
 beforeEach(() => {
@@ -128,6 +177,114 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks())
 
 describe('Nutrition plan review and persistence', () => {
+  it.each([
+    [{ revision: 1, plan: savedPlan }, 'Active plan'],
+    [{ revision: 0, plan: null }, 'Calculator'],
+  ] satisfies [ActivePlanResponse, string][])('defaults to %s only after a confirmed active-plan status', async (initialActive, expected) => {
+    mockWorkspace(initialActive)
+    renderWorkspace()
+    await waitFor(() => expect(screen.getByRole('tab', { name: expected })).toHaveAttribute('aria-selected', 'true'))
+    if (expected === 'Calculator') await screen.findByRole('form', { name: 'Nutrition preview' })
+    else await screen.findByText(/Version 1 · Started/)
+    const tab = screen.getByRole('tab', { name: expected })
+    const panel = document.getElementById(tab.getAttribute('aria-controls')!)
+    expect(panel).toHaveAttribute('role', 'tabpanel')
+    expect(panel).toHaveAttribute('aria-labelledby', tab.id)
+    expect(panel).not.toHaveAttribute('hidden')
+    for (const other of screen.getAllByRole('tab').filter((item) => item !== tab)) {
+      expect(document.getElementById(other.getAttribute('aria-controls')!)).toHaveAttribute('hidden')
+    }
+  })
+
+  it('preserves an explicit tab choice across a delayed active read and supports Arrow, Home and End focus', async () => {
+    let release!: (response: Response) => void
+    const pending = new Promise<Response>((resolve) => { release = resolve })
+    const { service } = mockWorkspace({ revision: 1, plan: savedPlan })
+    service.readActive = () => pending
+    const user = userEvent.setup()
+    renderWorkspace()
+    await screen.findByRole('form', { name: 'Nutrition preview' })
+    expect(screen.getByRole('status')).toHaveTextContent('Checking saved-plan status')
+    await user.click(screen.getByRole('tab', { name: 'History' }))
+    expect(screen.getByRole('tab', { name: 'History' })).toHaveFocus()
+    await user.keyboard('{Home}')
+    expect(screen.getByRole('tab', { name: 'Active plan' })).toHaveFocus()
+    await user.keyboard('{ArrowRight}')
+    expect(screen.getByRole('tab', { name: 'Calculator' })).toHaveFocus()
+    await user.keyboard('{End}')
+    expect(screen.getByRole('tab', { name: 'History' })).toHaveFocus()
+    await user.keyboard('{ArrowLeft}')
+    expect(screen.getByRole('tab', { name: 'Calculator' })).toHaveFocus()
+    await act(async () => { release(Response.json({ revision: 1, plan: savedPlan })); await pending })
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Calculator' })).toHaveAttribute('aria-selected', 'true'))
+    expect(screen.getByRole('tab', { name: 'Active plan' })).toHaveAttribute('aria-selected', 'false')
+    expect(screen.getByRole('tab', { name: 'Calculator' })).toHaveAttribute('tabindex', '0')
+    expect(screen.getByRole('tab', { name: 'Active plan' })).toHaveAttribute('tabindex', '-1')
+  })
+
+  it('does not switch away from a calculator draft when the active response arrives after the user starts typing', async () => {
+    let release!: (response: Response) => void
+    const pending = new Promise<Response>((resolve) => { release = resolve })
+    const { service } = mockWorkspace({ revision: 1, plan: savedPlan })
+    service.readActive = () => pending
+    const user = userEvent.setup()
+    renderWorkspace()
+    await fillNewManual(user)
+    expect(screen.getByRole('tab', { name: 'Calculator' })).toHaveAttribute('aria-selected', 'true')
+    await act(async () => { release(Response.json(service.active)); await pending })
+    await waitFor(() => expect(screen.getByText(/Version 1 · Started/)).toBeInTheDocument())
+    expect(screen.getByRole('tab', { name: 'Calculator' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('spinbutton', { name: 'Manual base target (kcal/day)' })).toHaveValue(2400)
+  })
+
+  it('retains inputs, accepted preview and weekday edits through tabs and Back without bypassing review', async () => {
+    const { fetchMock, planFetch } = mockWorkspace()
+    const user = userEvent.setup()
+    renderWorkspace()
+    await fillNewManual(user)
+    await user.click(screen.getByRole('tab', { name: 'History' }))
+    await user.click(screen.getByRole('tab', { name: 'Calculator' }))
+    expect(screen.getByRole('spinbutton', { name: 'Manually entered weight (kg)' })).toHaveValue(80)
+    await user.click(screen.getByRole('button', { name: 'Preview daily targets' }))
+    await screen.findByRole('region', { name: 'Provisional daily target preview' })
+    expect(screen.getByRole('heading', { level: 2, name: 'Preview' })).toHaveFocus()
+    expect(screen.queryByRole('spinbutton', { name: 'Monday (kcal)' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Back to inputs' }))
+    expect(screen.getByRole('spinbutton', { name: 'Manual base target (kcal/day)' })).toHaveValue(2400)
+    await user.click(screen.getByRole('button', { name: 'Continue to accepted preview' }))
+    expect(screen.getByRole('region', { name: 'Provisional daily target preview' })).toBeInTheDocument()
+    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/nutrition/v1/estimates/preview')).toHaveLength(1)
+    await user.click(screen.getByRole('button', { name: 'Next: Weekday targets' }))
+    expect(screen.getByRole('heading', { level: 2, name: 'Weekday targets' })).toHaveFocus()
+    const monday = screen.getByRole('spinbutton', { name: 'Monday (kcal)' })
+    const sunday = screen.getByRole('spinbutton', { name: 'Sunday (kcal)' })
+    await user.clear(monday)
+    await user.type(monday, '2600')
+    expect(screen.getByRole('button', { name: 'Next: Review and save' })).toBeDisabled()
+    await user.clear(sunday)
+    await user.type(sunday, '2200')
+    await user.click(screen.getByRole('tab', { name: 'History' }))
+    await user.click(screen.getByRole('tab', { name: 'Calculator' }))
+    expect(screen.getByRole('spinbutton', { name: 'Monday (kcal)' })).toHaveValue(2600)
+    expect(screen.getByRole('spinbutton', { name: 'Sunday (kcal)' })).toHaveValue(2200)
+    await reviewedFlat()
+    expect(screen.getByRole('heading', { level: 2, name: 'Review and save' })).toHaveFocus()
+    expect(screen.getByText(/Some weekday targets differ from the chosen average/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save new plan' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Back to weekdays' }))
+    await user.click(screen.getByRole('button', { name: 'Back to preview' }))
+    await user.click(screen.getByRole('button', { name: 'Next: Weekday targets' }))
+    expect(screen.getByRole('spinbutton', { name: 'Monday (kcal)' })).toHaveValue(2600)
+    expect(screen.getByRole('spinbutton', { name: 'Sunday (kcal)' })).toHaveValue(2200)
+    expect(callsTo(planFetch, '/api/nutrition/v1/plans/allocations/preview')).toHaveLength(2)
+    await user.click(screen.getByRole('button', { name: 'Back to preview' }))
+    await user.click(screen.getByRole('button', { name: 'Back to inputs' }))
+    await user.clear(screen.getByRole('spinbutton', { name: 'Manual base target (kcal/day)' }))
+    expect(screen.queryByRole('button', { name: 'Continue to accepted preview' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Next: Weekday targets' })).not.toBeInTheDocument()
+    expect(callsTo(planFetch, '/api/nutrition/v1/plans')).toHaveLength(0)
+  })
+
   it('starts flat, uses a complete unchanged accepted preview, and waits for an active revision before saving', async () => {
     let releaseActive!: (response: Response) => void
     const pending = new Promise<Response>((resolve) => { releaseActive = resolve })
@@ -137,14 +294,18 @@ describe('Nutrition plan review and persistence', () => {
     const review = await reviewedFlat()
     expect(review.getByText('Chosen average: 2,400 kcal/day. Planned full-week total: 16,800 kcal. These are targets, not food consumed.')).toBeInTheDocument()
     expect(review.getAllByText('2,400 kcal')).toHaveLength(7)
-    expect(review.getByText('Monday').parentElement).toHaveTextContent('Protein128 g')
-    expect(review.getByText('Sunday').parentElement).toHaveTextContent('Fibre25 g')
-    expect(screen.getByText('Remaining allocation: 0 kcal. The week is balanced.')).toBeInTheDocument()
-    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+    expect(review.getByText('Monday').closest('tr')).toHaveTextContent('Monday2,400 kcal0 kcal128 g80 g292 g25 g')
+    expect(review.getByText('Sunday').closest('tr')).toHaveTextContent('Sunday2,400 kcal0 kcal128 g80 g292 g25 g')
+    expect(screen.getByRole('checkbox', { name: /I confirm this IANA calendar time zone/ })).not.toBeChecked()
     expect(screen.getByRole('button', { name: 'Save new plan' })).toBeDisabled()
     const allocationCall = callsTo(fetchMock, '/api/nutrition/v1/plans/allocations/preview')[0]!
     expect(JSON.parse(allocationCall[1]!.body as string)).toEqual({ accepted_preview: manualPreview, weekday_kcal: Array(7).fill(2400) })
     await act(async () => { releaseActive(Response.json({ revision: 0, plan: null })); await pending })
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Saved-plan status changed since this review'))
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Back to weekdays' }))
+    expect(screen.getByText('Remaining allocation: 0 kcal. The week is balanced.')).toBeInTheDocument()
+    await reviewedFlat()
+    await confirmZone(userEvent.setup())
     await waitFor(() => expect(screen.getByRole('button', { name: 'Save new plan' })).toBeEnabled())
     expect(callsTo(fetchMock, '/api/nutrition/v1/plans')).toHaveLength(0)
   })
@@ -153,7 +314,8 @@ describe('Nutrition plan review and persistence', () => {
     const { fetchMock } = mockPlanService()
     const user = userEvent.setup()
     renderPlans()
-    await reviewedFlat()
+    await screen.findByText('No active nutrition plan. An unsaved calculator preview is not a plan.')
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Next: Review and save' })).toBeEnabled())
     const monday = screen.getByRole('spinbutton', { name: 'Monday (kcal)' })
     const sunday = screen.getByRole('spinbutton', { name: 'Sunday (kcal)' })
     await user.clear(monday)
@@ -161,28 +323,36 @@ describe('Nutrition plan review and persistence', () => {
     expect(screen.getByText('Remaining allocation: -200 kcal. Adjust a weekday; no other day changes automatically.')).toBeInTheDocument()
     expect(sunday).toHaveValue(2400)
     expect(screen.queryByRole('region', { name: 'Provisional weekday targets' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Save new plan' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Next: Review and save' })).toBeDisabled()
     await user.clear(sunday)
     await user.type(sunday, '2200')
-    const review = within(await screen.findByRole('region', { name: 'Provisional weekday targets' }))
-    expect(review.getByText('Monday').parentElement).toHaveTextContent('Calories2,600 kcalVs average+200 kcalProtein128 gFat86.67 gCarbohydrate326.99 gFibre25 g')
-    expect(review.getByText('Sunday').parentElement).toHaveTextContent('Calories2,200 kcalVs average-200 kcalProtein128 gFat73.33 gCarbohydrate257.01 gFibre25 g')
+    const review = await reviewedFlat()
+    expect(review.getByText('Monday').closest('tr')).toHaveTextContent('Monday2,600 kcal+200 kcal128 g86.67 g326.99 g25 g')
+    expect(review.getByText('Sunday').closest('tr')).toHaveTextContent('Sunday2,200 kcal-200 kcal128 g73.33 g257.01 g25 g')
     expect(screen.getByText(/Some weekday targets differ from the chosen average/)).toBeInTheDocument()
     const acknowledgment = screen.getByRole('checkbox', { name: /I have reviewed the server's day-level reasons/ })
+    expect(acknowledgment).not.toBeChecked()
+    expect(screen.getByRole('button', { name: 'Save new plan' })).toBeDisabled()
+    await user.click(acknowledgment)
+    expect(screen.getByRole('button', { name: 'Save new plan' })).toBeDisabled()
+    await confirmZone(user)
     expect(acknowledgment).not.toBeChecked()
     expect(screen.getByRole('button', { name: 'Save new plan' })).toBeDisabled()
     await user.click(acknowledgment)
     expect(screen.getByRole('button', { name: 'Save new plan' })).toBeEnabled()
     await user.type(screen.getByRole('textbox', { name: 'Plan calendar time zone (IANA)' }), 'a')
     expect(acknowledgment).not.toBeChecked()
-    await user.click(acknowledgment)
-    await user.clear(sunday)
-    await user.type(sunday, '2199')
+    expect(screen.getByRole('checkbox', { name: /I confirm this IANA calendar time zone/ })).not.toBeChecked()
+    await user.click(screen.getByRole('button', { name: 'Back to weekdays' }))
+    const sundayAfterBack = screen.getByRole('spinbutton', { name: 'Sunday (kcal)' })
+    await user.clear(sundayAfterBack)
+    await user.type(sundayAfterBack, '2199')
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Save new plan' })).toBeDisabled()
-    await user.clear(sunday)
-    await user.type(sunday, '2200')
-    expect(await screen.findByRole('checkbox', { name: /I have reviewed the server's day-level reasons/ })).not.toBeChecked()
+    expect(screen.getByRole('button', { name: 'Next: Review and save' })).toBeDisabled()
+    await user.clear(sundayAfterBack)
+    await user.type(sundayAfterBack, '2200')
+    await reviewedFlat()
+    expect(screen.getByRole('checkbox', { name: /I have reviewed the server's day-level reasons/ })).not.toBeChecked()
     expect(screen.getByRole('button', { name: 'Save new plan' })).toBeDisabled()
     expect(callsTo(fetchMock, '/api/nutrition/v1/plans/allocations/preview')).toHaveLength(3)
   })
@@ -201,7 +371,7 @@ describe('Nutrition plan review and persistence', () => {
     await reviewedFlat()
     expect(screen.getByText(/downward adjustment from your manually entered base, not a measured or medically established deficit/)).toBeInTheDocument()
     expect(screen.queryByText(/below estimated maintenance/)).not.toBeInTheDocument()
-    expect(screen.getByRole('checkbox')).not.toBeChecked()
+    expect(screen.getByRole('checkbox', { name: /I have reviewed the server's day-level reasons/ })).not.toBeChecked()
   })
 
   it('ignores a late flat allocation response after an edit and never enables save for stale or unbalanced days', async () => {
@@ -218,11 +388,11 @@ describe('Nutrition plan review and persistence', () => {
     await user.type(monday, '2600')
     await act(async () => { releaseFirst(Response.json(flatAllocation)); await first })
     expect(screen.queryByRole('region', { name: 'Provisional weekday targets' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Save new plan' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Next: Review and save' })).toBeDisabled()
     const sunday = screen.getByRole('spinbutton', { name: 'Sunday (kcal)' })
     await user.clear(sunday)
     await user.type(sunday, '2200')
-    expect((await reviewedFlat()).getByText('Monday').parentElement).toHaveTextContent('2,600 kcal')
+    expect((await reviewedFlat()).getByText('Monday').closest('tr')).toHaveTextContent('2,600 kcal')
     expect(callsTo(fetchMock, '/api/nutrition/v1/plans/allocations/preview')).toHaveLength(2)
   })
 
@@ -232,8 +402,34 @@ describe('Nutrition plan review and persistence', () => {
     renderPlans()
     expect(await screen.findByRole('alert')).toHaveTextContent('Weekday target cannot accommodate chosen protein, fat and fibre')
     expect(screen.getByText('Request ID: infeasible-id')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Save new plan' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Next: Review and save' })).toBeDisabled()
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+  })
+
+  it('requires a fresh calculator preview rather than retrying a stale stateless allocation as a saved review', async () => {
+    const { service, planFetch } = mockWorkspace()
+    let attempts = 0
+    service.allocation = () => ++attempts === 1
+      ? failure(409, 'Preview no longer matches; preview again', 'stale-calculation-id')
+      : Response.json(flatAllocation)
+    const user = userEvent.setup()
+    renderWorkspace()
+    await fillNewManual(user)
+    await user.click(screen.getByRole('button', { name: 'Preview daily targets' }))
+    await user.click(await screen.findByRole('button', { name: 'Next: Weekday targets' }))
+    expect(await screen.findByRole('heading', { name: 'Calculation preview is stale' })).toBeInTheDocument()
+    expect(screen.getByText('Request ID: stale-calculation-id')).toBeInTheDocument()
+    expect(screen.getByText(/Return to Inputs and request a new calculator preview/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Next: Review and save' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Back to preview' }))
+    await user.click(screen.getByRole('button', { name: 'Back to inputs' }))
+    expect(screen.getByRole('spinbutton', { name: 'Manually entered weight (kg)' })).toHaveValue(80)
+    await user.click(screen.getByRole('button', { name: 'Preview daily targets' }))
+    await user.click(await screen.findByRole('button', { name: 'Next: Weekday targets' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Next: Review and save' })).toBeEnabled())
+    expect(callsTo(planFetch, '/api/nutrition/v1/plans/allocations/preview')).toHaveLength(2)
+    expect(callsTo(planFetch, '/api/nutrition/v1/plans')).toHaveLength(0)
   })
 
   it('saves only after a reviewed allocation, sends the expected revision and IANA zone, and refetches active/history', async () => {
@@ -251,11 +447,14 @@ describe('Nutrition plan review and persistence', () => {
     }
     const user = userEvent.setup()
     renderPlans()
+    await screen.findByText('No active nutrition plan. An unsaved calculator preview is not a plan.')
     await reviewedFlat()
     const zone = screen.getByRole('textbox', { name: 'Plan calendar time zone (IANA)' })
     await user.clear(zone)
     expect(screen.getByRole('button', { name: 'Save new plan' })).toBeDisabled()
     await user.type(zone, 'Europe/Oslo')
+    expect(screen.getByRole('button', { name: 'Save new plan' })).toBeDisabled()
+    await user.click(screen.getByRole('checkbox', { name: /I confirm this IANA calendar time zone/ }))
     await user.click(screen.getByRole('button', { name: 'Save new plan' }))
     expect(await screen.findByText(/Nutrition plan version 1 saved/)).toBeInTheDocument()
     expect(await screen.findByText(/Version 1 · Started/)).toHaveTextContent('Calendar zone: Europe/Oslo')
@@ -283,11 +482,12 @@ describe('Nutrition plan review and persistence', () => {
     }
     const user = userEvent.setup()
     renderPlans()
+    await screen.findByText('Version 1 · Active')
     await reviewedFlat()
     expect(screen.getByRole('heading', { name: 'Review a replacement plan' })).toBeInTheDocument()
-    expect(screen.getByText(/To change the average, calculate a fresh preview and explicitly replace/)).toBeInTheDocument()
     await user.clear(screen.getByRole('textbox', { name: 'Plan calendar time zone (IANA)' }))
     await user.type(screen.getByRole('textbox', { name: 'Plan calendar time zone (IANA)' }), 'Europe/Oslo')
+    await user.click(screen.getByRole('checkbox', { name: /I confirm this IANA calendar time zone/ }))
     await user.click(screen.getByRole('button', { name: 'Replace active plan' }))
     expect(await screen.findByText(/Version 2 · Started/)).toBeInTheDocument()
     expect(await screen.findByText('Version 1 · Ended')).toBeInTheDocument()
@@ -317,18 +517,19 @@ describe('Nutrition plan review and persistence', () => {
     }
     const user = userEvent.setup()
     renderPlans(null)
-    expect(await screen.findByRole('button', { name: 'Edit saved weekday allocation' })).toBeEnabled()
-    await user.click(screen.getByRole('button', { name: 'Edit saved weekday allocation' }))
-    expect(screen.getByRole('heading', { name: 'Edit saved weekday allocation' })).toBeInTheDocument()
-    expect(screen.getByText(/reviews the active saved snapshot from version 1 without recalculating its historical estimate/)).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Edit weekdays' })).toBeEnabled()
+    await user.click(screen.getByRole('button', { name: 'Edit weekdays' }))
+    expect(screen.getByRole('heading', { name: 'Edit saved weekdays' })).toBeInTheDocument()
+    expect(screen.getByText(/Editing version 1 uses its unchanged accepted snapshot and saved calendar zone/)).toBeInTheDocument()
     expect(screen.getByRole('spinbutton', { name: 'Monday (kcal)' })).toHaveValue(2600)
     expect(screen.getByRole('spinbutton', { name: 'Sunday (kcal)' })).toHaveValue(2200)
-    expect(screen.getByRole('textbox', { name: 'Plan calendar time zone (IANA)' })).toHaveValue('Europe/Oslo')
     await reviewedFlat()
+    expect(screen.getByRole('textbox', { name: 'Plan calendar time zone (IANA)' })).toHaveValue('Europe/Oslo')
     const ack = screen.getByRole('checkbox', { name: /I have reviewed the server's day-level reasons/ })
     expect(ack).not.toBeChecked()
     expect(screen.getByRole('button', { name: 'Replace active plan' })).toBeDisabled()
     await user.click(ack)
+    await user.click(screen.getByRole('checkbox', { name: /I confirm this IANA calendar time zone/ }))
     await user.click(screen.getByRole('button', { name: 'Replace active plan' }))
     expect(await screen.findByText(/Version 2 · Started/)).toBeInTheDocument()
     const reviewCalls = callsTo(fetchMock, `/api/nutrition/v1/plans/${unevenSaved.id}/allocations/preview`)
@@ -371,12 +572,15 @@ describe('Nutrition plan review and persistence', () => {
     }
     const user = userEvent.setup()
     renderPlans(null)
-    await user.click(await screen.findByRole('button', { name: 'Edit saved weekday allocation' }))
-    expect((await reviewedFlat()).getByText('Current neutral allocation notice.')).toBeInTheDocument()
+    await user.click(await screen.findByRole('button', { name: 'Edit weekdays' }))
+    const review = await reviewedFlat()
+    await user.click(review.getByText('About these targets'))
+    expect(review.getByText('Current neutral allocation notice.')).toBeInTheDocument()
     expect(screen.getByRole('checkbox', { name: /I have reviewed the server's day-level reasons/ })).not.toBeChecked()
     expect(callsTo(fetchMock, `/api/nutrition/v1/plans/${original.id}/allocations/preview`)).toHaveLength(1)
     expect(callsTo(fetchMock, '/api/nutrition/v1/plans/allocations/preview')).toHaveLength(0)
     await user.click(screen.getByRole('checkbox', { name: /I have reviewed the server's day-level reasons/ }))
+    await user.click(screen.getByRole('checkbox', { name: /I confirm this IANA calendar time zone/ }))
     await user.click(screen.getByRole('button', { name: 'Replace active plan' }))
     expect(await screen.findByText(/Version 2 · Started/)).toBeInTheDocument()
     expect(callsTo(fetchMock, '/api/nutrition/v1/plans/active/replacements')).toHaveLength(1)
@@ -390,14 +594,14 @@ describe('Nutrition plan review and persistence', () => {
     service.activeAllocation = () => failure(status, detail, 'stale-review-id')
     const user = userEvent.setup()
     renderPlans(null)
-    await user.click(await screen.findByRole('button', { name: 'Edit saved weekday allocation' }))
+    await user.click(await screen.findByRole('button', { name: 'Edit weekdays' }))
     expect(await screen.findByRole('heading', { name: 'Saved allocation review is stale' })).toBeInTheDocument()
     expect(screen.getByRole('alert')).toHaveTextContent(status === 404 ? 'This saved plan could not be found.' : detail)
     expect(screen.getByText('Request ID: stale-review-id')).toBeInTheDocument()
-    expect(screen.getByText(/Refresh the active plan and history, then review its weekday allocation again/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
     expect(screen.getByRole('spinbutton', { name: 'Monday (kcal)' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Replace active plan' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Next: Review and save' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Refresh saved plan' })).toBeEnabled()
     const latest: SavedPlan = { ...savedPlan, id: 'c83c82c3-f14c-429a-a89c-62f79c994be7', version: 2, weekdays: unevenDays }
     service.active = { revision: 2, plan: latest }
     service.history = { revision: 2, plans: [latest, { ...savedPlan, ended_at: '2026-09-29T17:00:00Z' }], next_before_version: null }
@@ -408,11 +612,11 @@ describe('Nutrition plan review and persistence', () => {
     }
     await user.click(screen.getByRole('button', { name: 'Refresh saved plan' }))
     expect(await screen.findByText('Version 2 · Active')).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: 'Edit saved weekday allocation' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Edit saved weekdays' })).not.toBeInTheDocument()
     expect(callsTo(fetchMock, `/api/nutrition/v1/plans/${savedPlan.id}/allocations/preview`)).toHaveLength(1)
     expect(callsTo(fetchMock, '/api/nutrition/v1/plans/active').length).toBeGreaterThan(1)
     expect(fetchMock.mock.calls.filter(([url]) => url.startsWith('/api/nutrition/v1/plans?')).length).toBeGreaterThan(1)
-    await user.click(screen.getByRole('button', { name: 'Edit saved weekday allocation' }))
+    await user.click(screen.getByRole('button', { name: 'Edit weekdays' }))
     await reviewedFlat()
     expect(screen.getByRole('checkbox', { name: /I have reviewed the server's day-level reasons/ })).not.toBeChecked()
     expect(screen.getByRole('button', { name: 'Replace active plan' })).toBeDisabled()
@@ -428,17 +632,16 @@ describe('Nutrition plan review and persistence', () => {
     service.activeAllocation = () => pending
     const user = userEvent.setup()
     const { client } = renderPlans(null)
-    await user.click(await screen.findByRole('button', { name: 'Edit saved weekday allocation' }))
+    await user.click(await screen.findByRole('button', { name: 'Edit weekdays' }))
     await waitFor(() => expect(callsTo(fetchMock, `/api/nutrition/v1/plans/${savedPlan.id}/allocations/preview`)).toHaveLength(1))
     const latest: SavedPlan = { ...savedPlan, id: 'c83c82c3-f14c-429a-a89c-62f79c994be7', version: 2 }
     service.active = { revision: 2, plan: latest }
     await act(async () => { await client.invalidateQueries({ queryKey: ['nutrition', 'plans', 'active', 'user-a', 'session-a'] }) })
-    expect(await screen.findByText(/Version 2 · Started/)).toBeInTheDocument()
     await act(async () => { release(Response.json(unevenAllocation)); await pending })
     expect(screen.queryByRole('region', { name: 'Provisional weekday targets' })).not.toBeInTheDocument()
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Replace active plan' })).toBeDisabled()
-    expect(screen.getByRole('alert')).toHaveTextContent('This saved plan is no longer active')
+    expect(screen.getByRole('button', { name: 'Next: Review and save' })).toBeDisabled()
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('This saved plan is no longer active'))
     expect(callsTo(fetchMock, '/api/nutrition/v1/plans/allocations/preview')).toHaveLength(0)
     expect(callsTo(fetchMock, '/api/nutrition/v1/plans/active/replacements')).toHaveLength(0)
   })
@@ -447,7 +650,7 @@ describe('Nutrition plan review and persistence', () => {
     const { service, fetchMock } = mockPlanService({ revision: 1, plan: savedPlan })
     const user = userEvent.setup()
     const { client } = renderPlans(null)
-    await user.click(await screen.findByRole('button', { name: 'Edit saved weekday allocation' }))
+    await user.click(await screen.findByRole('button', { name: 'Edit weekdays' }))
     await reviewedFlat()
     service.readActive = () => failure(503, 'Plan storage is not configured', 'read-failure-id')
     await act(async () => { await client.invalidateQueries({ queryKey: ['nutrition', 'plans', 'active', 'user-a', 'session-a'] }) })
@@ -469,10 +672,10 @@ describe('Nutrition plan review and persistence', () => {
     service.activeAllocation = () => failure(status, detail, 'active-error-id')
     const user = userEvent.setup()
     renderPlans(null)
-    await user.click(await screen.findByRole('button', { name: 'Edit saved weekday allocation' }))
+    await user.click(await screen.findByRole('button', { name: 'Edit weekdays' }))
     expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument()
     expect(screen.getByText('Request ID: active-error-id')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Replace active plan' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Next: Review and save' })).toBeDisabled()
     expect(callsTo(fetchMock, '/api/nutrition/v1/plans/allocations/preview')).toHaveLength(0)
     expect(callsTo(fetchMock, '/api/nutrition/v1/plans/active/replacements')).toHaveLength(0)
   })
@@ -482,6 +685,7 @@ describe('Nutrition plan review and persistence', () => {
     const user = userEvent.setup()
     renderPlans()
     await reviewedFlat()
+    await confirmZone(user)
     await user.click(await screen.findByRole('button', { name: 'Save new plan' }))
     expect(await screen.findByRole('heading', { name: 'Plan was not saved' })).toBeInTheDocument()
     expect(screen.getByRole('alert')).toHaveTextContent('storage is not configured')
@@ -505,11 +709,12 @@ describe('Nutrition plan review and persistence', () => {
     const { service, fetchMock } = mockPlanService({ revision: 1, plan: prior })
     const user = userEvent.setup()
     renderPlans(null)
-    await user.click(await screen.findByRole('button', { name: 'Edit saved weekday allocation' }))
+    await user.click(await screen.findByRole('button', { name: 'Edit weekdays' }))
     await reviewedFlat()
     const ack = screen.getByRole('checkbox', { name: /I have reviewed the server's day-level reasons/ })
     expect(ack).not.toBeChecked()
     await user.click(ack)
+    await user.click(screen.getByRole('checkbox', { name: /I confirm this IANA calendar time zone/ }))
     await user.click(screen.getByRole('button', { name: 'Replace active plan' }))
     expect(await screen.findByRole('heading', { name: 'Plan was not saved' })).toBeInTheDocument()
     expect(ack).not.toBeChecked()
@@ -551,11 +756,11 @@ describe('Nutrition plan review and persistence', () => {
     expect(await screen.findByText('Version 2 · Active')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Load more saved versions' }))
     expect(await screen.findByText('Version 1 · Ended')).toBeInTheDocument()
-    await user.click(screen.getByText('View saved version 1 weekday targets'))
+    await user.click(screen.getByText('View saved version 1 details'))
     expect(screen.getByRole('region', { name: 'Version 1 saved targets' })).toHaveTextContent('Monday')
-    await user.click(screen.getByRole('button', { name: 'End active plan' }))
+    await user.click(screen.getByRole('button', { name: 'End plan' }))
     expect(callsTo(fetchMock, '/api/nutrition/v1/plans/active/end')).toHaveLength(0)
-    await user.click(screen.getByRole('button', { name: 'End active plan' }))
+    await user.click(screen.getByRole('button', { name: 'End plan' }))
     expect(await screen.findByText('Nutrition plan ended. Its saved history remains available.')).toBeInTheDocument()
     expect(await screen.findByText('No active nutrition plan. An unsaved calculator preview is not a plan.')).toBeInTheDocument()
     expect(await screen.findByText('Version 2 · Ended')).toBeInTheDocument()
@@ -565,13 +770,58 @@ describe('Nutrition plan review and persistence', () => {
     expect(fetchMock.mock.calls.filter(([url]) => url.endsWith('before_version=2')).length).toBeGreaterThan(1)
   })
 
+  it('keeps end confirmation visible on the active tab and replaces it with the next save result', async () => {
+    const { service, planFetch } = mockWorkspace({ revision: 1, plan: savedPlan })
+    const next: SavedPlan = {
+      ...savedPlan,
+      id: 'c83c82c3-f14c-429a-a89c-62f79c994be7',
+      version: 2,
+      started_at: '2026-09-29T17:00:00Z',
+    }
+    service.end = ({ expected_revision }) => {
+      expect(expected_revision).toBe(1)
+      service.active = { revision: 2, plan: null }
+      service.history = { revision: 2, plans: [{ ...savedPlan, ended_at: next.started_at }], next_before_version: null }
+      return Response.json(service.active)
+    }
+    service.save = (body) => {
+      expect(body.expected_revision).toBe(2)
+      expect(body.accepted_preview).toEqual(manualPreview)
+      service.active = { revision: 3, plan: next }
+      service.history = { revision: 3, plans: [next, { ...savedPlan, ended_at: next.started_at }], next_before_version: null }
+      return Response.json(service.active, { status: 201 })
+    }
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const user = userEvent.setup()
+    renderWorkspace()
+    await screen.findByText(/Version 1 · Started/)
+    await user.click(screen.getByRole('button', { name: 'End plan' }))
+    expect(await screen.findByText('Nutrition plan ended. Its saved history remains available.')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Active plan' })).toHaveAttribute('aria-selected', 'true')
+    await screen.findByText('No active nutrition plan. An unsaved calculator preview is not a plan.')
+    await user.click(screen.getByRole('button', { name: 'New calculation' }))
+    expect(screen.getByRole('tab', { name: 'Calculator' })).toHaveAttribute('aria-selected', 'true')
+    await fillNewManual(user)
+    await user.click(screen.getByRole('button', { name: 'Preview daily targets' }))
+    await user.click(await screen.findByRole('button', { name: 'Next: Weekday targets' }))
+    await reviewedFlat()
+    await confirmZone(user)
+    await user.click(screen.getByRole('button', { name: 'Save new plan' }))
+    expect(await screen.findByText(/Nutrition plan version 2 saved/)).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Active plan' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.queryByText('Nutrition plan ended. Its saved history remains available.')).not.toBeInTheDocument()
+    expect(callsTo(planFetch, '/api/nutrition/v1/plans/active/end')).toHaveLength(1)
+    expect(callsTo(planFetch, '/api/nutrition/v1/plans')).toHaveLength(1)
+  })
+
   it('keeps an active plan unchanged on a 409 revision conflict, then refreshes instead of resubmitting stale data', async () => {
     const { service, fetchMock } = mockPlanService({ revision: 1, plan: savedPlan })
     const user = userEvent.setup()
     service.replace = () => failure(409, 'Plan revision does not match', 'conflict-id')
     renderPlans(null)
-    await user.click(await screen.findByRole('button', { name: 'Edit saved weekday allocation' }))
+    await user.click(await screen.findByRole('button', { name: 'Edit weekdays' }))
     await reviewedFlat()
+    await user.click(screen.getByRole('checkbox', { name: /I confirm this IANA calendar time zone/ }))
     await user.click(screen.getByRole('button', { name: 'Replace active plan' }))
     expect(await screen.findByRole('heading', { name: 'Plan was not saved' })).toBeInTheDocument()
     expect(screen.getByRole('alert')).toHaveTextContent('Plan revision does not match')
@@ -583,26 +833,147 @@ describe('Nutrition plan review and persistence', () => {
     service.history = { revision: 2, plans: [latest, { ...savedPlan, ended_at: '2026-09-29T17:00:00Z' }], next_before_version: null }
     await user.click(screen.getByRole('button', { name: 'Refresh saved plan' }))
     expect(await screen.findByText('Version 2 · Active')).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: 'Edit saved weekday allocation' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Edit saved weekdays' })).not.toBeInTheDocument()
     expect(callsTo(fetchMock, '/api/nutrition/v1/plans/active/replacements')).toHaveLength(1)
+  })
+
+  it('recovers a conflicted new calculation only after explicit revision refresh and a renewed server review', async () => {
+    const { service, planFetch, fetchMock } = mockWorkspace()
+    service.save = () => {
+      service.active = { revision: 1, plan: savedPlan }
+      service.history = { revision: 1, plans: [savedPlan], next_before_version: null }
+      return failure(409, 'Another session created an active plan', 'new-conflict-id')
+    }
+    const user = userEvent.setup()
+    renderWorkspace()
+    await fillNewManual(user)
+    await user.click(screen.getByRole('button', { name: 'Preview daily targets' }))
+    await user.click(await screen.findByRole('button', { name: 'Next: Weekday targets' }))
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Monday (kcal)' }), { target: { value: '2600' } })
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Sunday (kcal)' }), { target: { value: '2200' } })
+    await reviewedFlat()
+    await confirmZone(user)
+    await user.click(screen.getByRole('checkbox', { name: /I have reviewed the server's day-level reasons/ }))
+    await user.click(screen.getByRole('button', { name: 'Save new plan' }))
+    await screen.findByText('Request ID: new-conflict-id')
+    expect(screen.getByRole('button', { name: 'Save new plan' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Back to weekdays' }))
+    expect(screen.getByRole('button', { name: 'Next: Review and save' })).toBeDisabled()
+    await user.click(screen.getByRole('tab', { name: 'History' }))
+    await user.click(screen.getByRole('tab', { name: 'Calculator' }))
+    expect(screen.getByRole('button', { name: 'Next: Review and save' })).toBeDisabled()
+
+    let releaseActive!: (response: Response) => void
+    const pendingActive = new Promise<Response>((resolve) => { releaseActive = resolve })
+    service.readActive = () => pendingActive
+    let releaseAllocation!: (response: Response) => void
+    const pendingAllocation = new Promise<Response>((resolve) => { releaseAllocation = resolve })
+    service.allocation = (body) => {
+      expect(body).toEqual({ accepted_preview: manualPreview, weekday_kcal: [2600, 2400, 2400, 2400, 2400, 2400, 2200] })
+      return pendingAllocation
+    }
+    const previousReviews = callsTo(planFetch, '/api/nutrition/v1/plans/allocations/preview').length
+    await user.click(screen.getByRole('button', { name: 'Refresh saved plan' }))
+    expect(screen.getByRole('button', { name: 'Refresh saved plan' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Next: Review and save' })).toBeDisabled()
+    expect(screen.getByText('Request ID: new-conflict-id')).toBeInTheDocument()
+    await act(async () => { releaseActive(Response.json(service.active)); await pendingActive })
+    await waitFor(() => expect(callsTo(planFetch, '/api/nutrition/v1/plans/allocations/preview')).toHaveLength(previousReviews + 1))
+    expect(screen.queryByText('Request ID: new-conflict-id')).not.toBeInTheDocument()
+    expect(screen.getByRole('spinbutton', { name: 'Monday (kcal)' })).toHaveValue(2600)
+    expect(screen.getByRole('spinbutton', { name: 'Sunday (kcal)' })).toHaveValue(2200)
+    expect(screen.getByRole('button', { name: 'Next: Review and save' })).toBeDisabled()
+    await act(async () => { releaseAllocation(Response.json(unevenAllocation)); await pendingAllocation })
+    await reviewedFlat()
+    expect(screen.getByRole('heading', { name: 'Review a replacement plan' })).toBeInTheDocument()
+    const zone = screen.getByRole('checkbox', { name: /I confirm this IANA calendar time zone/ })
+    const risk = screen.getByRole('checkbox', { name: /I have reviewed the server's day-level reasons/ })
+    expect(screen.getByRole('textbox', { name: 'Plan calendar time zone (IANA)' })).toHaveValue('Europe/Oslo')
+    expect(zone).not.toBeChecked()
+    expect(risk).not.toBeChecked()
+    expect(screen.getByRole('button', { name: 'Replace active plan' })).toBeDisabled()
+    expect(callsTo(planFetch, '/api/nutrition/v1/plans')).toHaveLength(1)
+    expect(callsTo(planFetch, '/api/nutrition/v1/plans/active/replacements')).toHaveLength(0)
+    await user.click(zone)
+    expect(screen.getByRole('button', { name: 'Replace active plan' })).toBeDisabled()
+    await user.click(risk)
+    expect(screen.getByRole('button', { name: 'Replace active plan' })).toBeEnabled()
+
+    const replacement: SavedPlan = { ...savedPlan, id: 'c83c82c3-f14c-429a-a89c-62f79c994be7', version: 2, weekdays: unevenDays, day_allocation_risk_acknowledged: true }
+    service.readActive = undefined
+    service.replace = (body) => {
+      expect(body).toEqual({
+        accepted_preview: manualPreview,
+        weekday_kcal: [2600, 2400, 2400, 2400, 2400, 2400, 2200],
+        expected_revision: 1,
+        time_zone: 'Europe/Oslo',
+        acknowledge_day_allocation_risk: true,
+      })
+      service.active = { revision: 2, plan: replacement }
+      service.history = { revision: 2, plans: [replacement, { ...savedPlan, ended_at: replacement.started_at }], next_before_version: null }
+      return Response.json(service.active)
+    }
+    await user.click(screen.getByRole('button', { name: 'Replace active plan' }))
+    await screen.findByText(/Nutrition plan version 2 saved/)
+    expect(callsTo(planFetch, '/api/nutrition/v1/plans/active/replacements')).toHaveLength(1)
+    expect(callsTo(planFetch, `/api/nutrition/v1/plans/${savedPlan.id}/allocations/preview`)).toHaveLength(0)
+    expect(callsTo(fetchMock, '/api/nutrition/v1/estimates/preview')).toHaveLength(1)
+  })
+
+  it.each([
+    ['failed', () => failure(503, 'Plan storage is unavailable', 'refresh-failure-id')],
+    ['invalid', () => Response.json({ revision: 1, plan: { id: savedPlan.id } })],
+  ] satisfies [string, () => Response][])('keeps a conflicted new calculation blocked after a %s explicit refresh', async (_label, response) => {
+    const { service, planFetch } = mockWorkspace()
+    service.save = () => {
+      service.active = { revision: 1, plan: savedPlan }
+      return failure(409, 'Another session created an active plan', 'new-conflict-id')
+    }
+    const user = userEvent.setup()
+    const { client } = renderWorkspace()
+    await fillNewManual(user)
+    await user.click(screen.getByRole('button', { name: 'Preview daily targets' }))
+    await user.click(await screen.findByRole('button', { name: 'Next: Weekday targets' }))
+    await reviewedFlat()
+    await confirmZone(user)
+    await user.click(screen.getByRole('button', { name: 'Save new plan' }))
+    await screen.findByText('Request ID: new-conflict-id')
+    const previousReviews = callsTo(planFetch, '/api/nutrition/v1/plans/allocations/preview').length
+    service.readActive = response
+    await user.click(screen.getByRole('button', { name: 'Refresh saved plan' }))
+    await screen.findByRole('heading', { name: 'Saved plan status unavailable' })
+    expect(screen.getByText('Request ID: new-conflict-id')).toBeInTheDocument()
+    expect(screen.getByRole('spinbutton', { name: 'Monday (kcal)' })).toHaveValue(2400)
+    expect(screen.getByRole('button', { name: 'Next: Review and save' })).toBeDisabled()
+    expect(callsTo(planFetch, '/api/nutrition/v1/plans/allocations/preview')).toHaveLength(previousReviews)
+    service.readActive = undefined
+    await act(async () => { await client.invalidateQueries({ queryKey: ['nutrition', 'plans', 'active', 'user-a', 'session-a'] }) })
+    expect(screen.getByText('Request ID: new-conflict-id')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Next: Review and save' })).toBeDisabled()
+    expect(callsTo(planFetch, '/api/nutrition/v1/plans')).toHaveLength(1)
+    expect(callsTo(planFetch, '/api/nutrition/v1/plans/active/replacements')).toHaveLength(0)
+    await user.click(screen.getByRole('button', { name: 'Refresh saved plan' }))
+    await reviewedFlat()
+    expect(screen.getByRole('checkbox', { name: /I confirm this IANA calendar time zone/ })).not.toBeChecked()
+    expect(screen.getByRole('button', { name: 'Replace active plan' })).toBeDisabled()
+    expect(callsTo(planFetch, '/api/nutrition/v1/plans/active/replacements')).toHaveLength(0)
   })
 
   it('blocks edits to a saved version that stopped being active during an in-flight review', async () => {
     const { service, fetchMock } = mockPlanService({ revision: 1, plan: savedPlan })
     const user = userEvent.setup()
     const { client } = renderPlans(null)
-    await user.click(await screen.findByRole('button', { name: 'Edit saved weekday allocation' }))
+    await user.click(await screen.findByRole('button', { name: 'Edit weekdays' }))
     await reviewedFlat()
     const latest = { ...savedPlan, id: 'c83c82c3-f14c-429a-a89c-62f79c994be7', version: 2 }
     service.active = { revision: 2, plan: latest }
     await act(async () => { await client.invalidateQueries({ queryKey: ['nutrition', 'plans', 'active', 'user-a', 'session-a'] }) })
     expect(callsTo(fetchMock, '/api/nutrition/v1/plans/active')).toHaveLength(2)
-    expect(await screen.findByText(/Version 2 · Started/)).toBeInTheDocument()
-    expect(screen.getByRole('alert')).toHaveTextContent('This saved plan is no longer active')
+    await screen.findByText(/This saved plan is no longer active/)
     expect(screen.getByRole('button', { name: 'Replace active plan' })).toBeDisabled()
     await user.click(screen.getByRole('button', { name: 'Refresh saved plan' }))
     expect(await screen.findByText(/Version 2 · Started/)).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: 'Edit saved weekday allocation' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Edit saved weekdays' })).not.toBeInTheDocument()
     expect(callsTo(fetchMock, '/api/nutrition/v1/plans/active/replacements')).toHaveLength(0)
   })
 
@@ -613,7 +984,7 @@ describe('Nutrition plan review and persistence', () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
     const user = userEvent.setup()
     renderPlans(null)
-    await user.click(await screen.findByRole('button', { name: 'Edit saved weekday allocation' }))
+    await user.click(await screen.findByRole('button', { name: 'Edit weekdays' }))
     await reviewedFlat()
     await user.clear(screen.getByRole('textbox', { name: 'Plan calendar time zone (IANA)' }))
     await user.type(screen.getByRole('textbox', { name: 'Plan calendar time zone (IANA)' }), 'Invalid/Zone')
@@ -621,13 +992,14 @@ describe('Nutrition plan review and persistence', () => {
     expect(screen.getByRole('button', { name: 'Replace active plan' })).toBeDisabled()
     await user.clear(screen.getByRole('textbox', { name: 'Plan calendar time zone (IANA)' }))
     await user.type(screen.getByRole('textbox', { name: 'Plan calendar time zone (IANA)' }), 'Europe/Oslo')
+    await user.click(screen.getByRole('checkbox', { name: /I confirm this IANA calendar time zone/ }))
     await user.click(screen.getByRole('button', { name: 'Replace active plan' }))
     expect(await screen.findByRole('heading', { name: 'Plan was not saved: check your inputs' })).toBeInTheDocument()
     expect(screen.getByRole('alert')).toHaveTextContent('Invalid IANA time zone')
     expect(screen.getByText('Request ID: zone-id')).toBeInTheDocument()
     expect(screen.queryByText(/Nutrition plan version 2 saved/)).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Leave without saving' }))
-    await user.click(screen.getByRole('button', { name: 'End active plan' }))
+    await user.click(screen.getByRole('button', { name: 'End plan' }))
     expect(await screen.findByRole('heading', { name: 'Plan was not ended: check your inputs' })).toBeInTheDocument()
     expect(screen.getByText('Request ID: end-id')).toBeInTheDocument()
     expect(screen.getByText('Version 1 · Active')).toBeInTheDocument()
@@ -640,7 +1012,7 @@ describe('Nutrition plan review and persistence', () => {
     renderPlans()
     await waitFor(() => expect(screen.getAllByRole('heading', { name: 'Session verification failed' }).length).toBeGreaterThanOrEqual(2))
     expect(screen.queryByText('No saved plan versions yet.')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Save new plan' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Next: Review and save' })).toBeDisabled()
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
@@ -653,7 +1025,7 @@ describe('Nutrition plan review and persistence', () => {
     await waitFor(() => expect(screen.getAllByRole('heading', { name: 'Nutrition access denied' })).toHaveLength(3))
     expect(screen.getAllByText('Request ID: denied-id')).toHaveLength(3)
     expect(screen.queryByText('No saved plan versions yet.')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Save new plan' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Next: Review and save' })).toBeDisabled()
     expect(callsTo(fetchMock, '/api/nutrition/v1/plans')).toHaveLength(0)
   })
 
@@ -682,17 +1054,24 @@ describe('Nutrition plan review and persistence', () => {
     await user.type(screen.getByRole('spinbutton', { name: 'Manual base target (kcal/day)' }), '2400')
     await user.click(screen.getByRole('button', { name: 'Preview daily targets' }))
     expect(await screen.findByRole('region', { name: 'Provisional daily target preview' })).toBeInTheDocument()
-    expect(await screen.findByRole('region', { name: 'Provisional weekday targets' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Next: Weekday targets' }))
+    await reviewedFlat()
+    expect(screen.getByRole('region', { name: 'Provisional weekday targets' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Save new plan' })).toBeDisabled()
     expect(callsTo(planFetch, '/api/nutrition/v1/plans/allocations/preview')).toHaveLength(1)
     expect(callsTo(planFetch, '/api/nutrition/v1/plans')).toHaveLength(0)
     storageAvailable = true
-    const retryButtons = screen.getAllByRole('button', { name: 'Retry' })
-    expect(retryButtons).toHaveLength(2)
-    await user.click(retryButtons[0]!)
-    await user.click(retryButtons[1]!)
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
+    await user.click(screen.getByRole('tab', { name: 'History' }))
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
     expect(await screen.findByText('No saved plan versions yet.')).toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: 'Active plan' }))
     expect(await screen.findByText('No active nutrition plan. An unsaved calculator preview is not a plan.')).toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: 'Calculator' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('Saved-plan status changed since this review')
+    await user.click(screen.getByRole('button', { name: 'Back to weekdays' }))
+    await reviewedFlat()
+    await confirmZone(user)
     expect(screen.getByRole('button', { name: 'Save new plan' })).toBeEnabled()
   })
 
@@ -742,20 +1121,109 @@ describe('Nutrition plan review and persistence', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
     const user = userEvent.setup()
     render(<QueryClientProvider client={client}><NutritionPage /></QueryClientProvider>)
-    expect(await screen.findByText(/Version 1 · Started/)).toHaveTextContent('Daily average 2,400 kcal')
+    await screen.findByText(/Version 1 · Started/)
+    expect(screen.getByText('Chosen daily target').parentElement).toHaveTextContent('2,400 kcal')
+    await user.click(screen.getByRole('tab', { name: 'Calculator' }))
     await user.click(screen.getByRole('radio', { name: 'Enter a manual base target' }))
     await user.type(screen.getByRole('spinbutton', { name: 'Age (completed years)' }), '19')
     await user.type(screen.getByRole('spinbutton', { name: 'Manually entered weight (kg)' }), '80')
     await user.type(screen.getByRole('spinbutton', { name: 'Manual base target (kcal/day)' }), '2600')
     await user.click(screen.getByRole('button', { name: 'Preview daily targets' }))
-    expect(await screen.findByRole('region', { name: 'Provisional weekday targets' })).toHaveTextContent('Chosen average: 2,600 kcal/day')
-    expect(screen.getByText(/Version 1 · Started/)).toHaveTextContent('Daily average 2,400 kcal')
+    await user.click(await screen.findByRole('button', { name: 'Next: Weekday targets' }))
+    await reviewedFlat()
+    expect(screen.getByRole('region', { name: 'Provisional weekday targets' })).toHaveTextContent('Chosen average: 2,600 kcal/day')
+    await user.click(screen.getByRole('tab', { name: 'Active plan' }))
+    expect(screen.getByText('Chosen daily target').parentElement).toHaveTextContent('2,400 kcal')
+    await user.click(screen.getByRole('tab', { name: 'Calculator' }))
     expect(callsTo(planFetch, '/api/nutrition/v1/plans/active/replacements')).toHaveLength(0)
+    await confirmZone(user)
     await user.click(await screen.findByRole('button', { name: 'Replace active plan' }))
-    expect(await screen.findByText(/Version 2 · Started/)).toHaveTextContent('Daily average 2,600 kcal')
+    await screen.findByText(/Version 2 · Started/)
+    expect(screen.getByText('Chosen daily target').parentElement).toHaveTextContent('2,600 kcal')
     expect(screen.getByText('Version 1 · Ended')).toBeInTheDocument()
     expect(callsTo(planFetch, '/api/nutrition/v1/plans/active/replacements')).toHaveLength(1)
     expect(fetchMock.mock.calls.filter(([url]) => url === '/api/nutrition/v1/estimates/preview')).toHaveLength(1)
+  })
+
+  it.each([
+    ['below per kg', 80, { mode: 'per_kg', g_per_kg: 0.99 }, 79.2, true],
+    ['above fixed grams', 80, { mode: 'daily_grams', g_per_day: 240.8 }, 240.8, true],
+    ['decimal lower boundary', 70.1, { mode: 'daily_grams', g_per_day: 70.1 }, 70.1, false],
+    ['decimal upper boundary', 70.1, { mode: 'daily_grams', g_per_day: 210.3 }, 210.3, false],
+    ['just below decimal boundary', 70.1, { mode: 'daily_grams', g_per_day: 70.09999999999998 }, 70.1, true],
+    ['just above decimal boundary', 70.1, { mode: 'daily_grams', g_per_day: 210.30000000000004 }, 210.3, true],
+  ] satisfies [string, number, ProteinSelection, number, boolean][])('reviews and saves %s protein without an extra gate and discloses the unchanged snapshot', async (_label, weight, protein, dailyProtein, warns) => {
+    const preview: PreviewResponse = {
+      ...manualPreview,
+      inputs: { ...manualPreview.inputs, weight_kg: weight, strategy: { ...manualPreview.inputs.strategy, protein } },
+      daily_target: { ...manualPreview.daily_target, protein_g: dailyProtein, carbohydrate_g: (2400 - dailyProtein * 4 - 80 * 9) / 4 },
+    }
+    const allocation = { ...flatAllocation, weekdays: flatAllocation.weekdays.map((day) => ({ ...day, target: preview.daily_target })) }
+    const { service, fetchMock } = mockPlanService()
+    service.allocation = (body) => {
+      expect(body.accepted_preview).toEqual(preview)
+      return Response.json(allocation)
+    }
+    service.save = (body) => {
+      expect(body).toEqual({
+        accepted_preview: preview,
+        weekday_kcal: Array(7).fill(2400),
+        expected_revision: 0,
+        time_zone: 'Europe/Oslo',
+      })
+      const plan: SavedPlan = { ...savedPlan, accepted_preview: preview, weekdays: allocation.weekdays }
+      service.active = { revision: 1, plan }
+      service.history = { revision: 1, plans: [plan], next_before_version: null }
+      return Response.json(service.active, { status: 201 })
+    }
+    const user = userEvent.setup()
+    renderPlans(preview)
+    await screen.findByText('No active nutrition plan. An unsaved calculator preview is not a plan.')
+    await reviewedFlat()
+    expect(screen.queryByText(/Protein review: This protein choice is outside the 1-3 g\/kg\/day product review band/) !== null).toBe(warns)
+    expect(screen.queryByRole('checkbox', { name: /server's day-level reasons/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save new plan' })).toBeDisabled()
+    await confirmZone(user)
+    expect(screen.getByRole('button', { name: 'Save new plan' })).toBeEnabled()
+    await user.click(screen.getByRole('button', { name: 'Save new plan' }))
+    expect(await screen.findByText(/Nutrition plan version 1 saved/)).toBeInTheDocument()
+    expect(callsTo(fetchMock, '/api/nutrition/v1/plans')).toHaveLength(1)
+    expect(callsTo(fetchMock, '/api/nutrition/v1/plans/allocations/preview')).toHaveLength(1)
+    await user.click(screen.getByText('About this saved calculation'))
+    const active = within(screen.getByRole('region', { name: 'Active plan' }))
+    const snapshot = within(active.getByRole('region', { name: 'Accepted daily target snapshot' }))
+    expect(snapshot.queryByText(/outside the 1-3 g\/kg\/day product review band/) !== null).toBe(warns)
+    await user.click(screen.getByText('View saved version 1 details'))
+    const history = within(screen.getByRole('region', { name: 'Saved plan history' }))
+    const historicalSnapshot = within(history.getByRole('region', { name: 'Accepted daily target snapshot' }))
+    expect(historicalSnapshot.queryByText(/outside the 1-3 g\/kg\/day product review band/) !== null).toBe(warns)
+    expect(service.active.plan?.accepted_preview).toEqual(preview)
+  })
+
+  it('discards unfinished calculator and weekday drafts when the keyed Clerk session changes', async () => {
+    const { service } = mockWorkspace({ revision: 1, plan: savedPlan })
+    service.readActive = () => Response.json(auth.userId === 'user-a' ? service.active : { revision: 0, plan: null })
+    service.readHistory = () => Response.json(auth.userId === 'user-a' ? service.history : { revision: 0, plans: [], next_before_version: null })
+    const user = userEvent.setup()
+    const { client, view } = renderWorkspace()
+    await screen.findByText(/Version 1 · Started/)
+    await user.click(screen.getByRole('tab', { name: 'Calculator' }))
+    await fillNewManual(user)
+    await user.click(screen.getByRole('button', { name: 'Preview daily targets' }))
+    await user.click(await screen.findByRole('button', { name: 'Next: Weekday targets' }))
+    const monday = screen.getByRole('spinbutton', { name: 'Monday (kcal)' })
+    await user.clear(monday)
+    await user.type(monday, '2600')
+    auth.userId = 'user-b'
+    auth.sessionId = 'session-b'
+    view.rerender(<QueryClientProvider client={client}><NutritionPage /></QueryClientProvider>)
+    await screen.findByRole('form', { name: 'Nutrition preview' })
+    expect(screen.getByRole('tab', { name: 'Calculator' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('spinbutton', { name: 'Manually entered weight (kg)' })).toHaveValue(null)
+    expect(screen.getByRole('radio', { name: 'Enter a manual base target' })).not.toBeChecked()
+    expect(screen.queryByRole('button', { name: 'Continue to accepted preview' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('spinbutton', { name: 'Monday (kcal)' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Version 1 · Active')).not.toBeInTheDocument()
   })
 
   it('discards the prior saved-plan UI and queries on a Clerk user/session switch', async () => {
@@ -774,5 +1242,151 @@ describe('Nutrition plan review and persistence', () => {
     expect(await screen.findByText('No saved plan versions yet.')).toBeInTheDocument()
     expect(screen.getByText('No active nutrition plan. An unsaved calculator preview is not a plan.')).toBeInTheDocument()
     expect(await screen.findByRole('form', { name: 'Nutrition preview' })).toBeInTheDocument()
+  })
+
+  it('keeps the active tab and the end result visible after the refetch confirms no plan, without depending on button focus', async () => {
+    const { service, planFetch } = mockWorkspace({ revision: 1, plan: savedPlan })
+    service.end = ({ expected_revision }) => {
+      expect(expected_revision).toBe(1)
+      service.active = { revision: 2, plan: null }
+      service.history = { revision: 2, plans: [{ ...savedPlan, ended_at: '2026-09-29T17:00:00Z' }], next_before_version: null }
+      return Response.json(service.active)
+    }
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderWorkspace()
+    await screen.findByText(/Version 1 · Started/)
+    expect(screen.getByRole('tab', { name: 'Active plan' })).toHaveAttribute('aria-selected', 'true')
+    // A tap that never moves DOM focus, as on iOS Safari, must not let the refetched status move the tab.
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'End plan' })) })
+    expect(await screen.findByText('Nutrition plan ended. Its saved history remains available.')).toBeVisible()
+    await screen.findByText('No active nutrition plan. An unsaved calculator preview is not a plan.')
+    await waitFor(() => expect(callsTo(planFetch, '/api/nutrition/v1/plans/active')).toHaveLength(2))
+    expect(screen.getByRole('tab', { name: 'Active plan' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByText('Nutrition plan ended. Its saved history remains available.')).toBeVisible()
+  })
+
+  it('keeps expanded saved history and the active plan on screen while a refresh is in flight', async () => {
+    let releaseActive!: (response: Response) => void
+    let releaseHistory!: (response: Response) => void
+    const pendingActive = new Promise<Response>((resolve) => { releaseActive = resolve })
+    const pendingHistory = new Promise<Response>((resolve) => { releaseHistory = resolve })
+    const { service } = mockPlanService({ revision: 1, plan: savedPlan })
+    const user = userEvent.setup()
+    const { client } = renderPlans(null)
+    expect(await screen.findByText('Version 1 · Active')).toBeInTheDocument()
+    await user.click(screen.getByText('View saved version 1 details'))
+    expect(screen.getByRole('region', { name: 'Version 1 saved targets' })).toHaveTextContent('Monday')
+    service.readActive = () => pendingActive
+    service.readHistory = () => pendingHistory
+    await act(async () => { void client.invalidateQueries({ queryKey: ['nutrition', 'plans'] }); await Promise.resolve() })
+    await waitFor(() => expect(screen.getByText('Loading saved plan history…')).toBeInTheDocument())
+    expect(screen.getByText('Loading saved plan and revision…')).toBeInTheDocument()
+    expect(screen.getByText('Version 1 · Active')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Version 1 saved targets' })).toHaveTextContent('Monday')
+    expect(screen.getByRole('region', { name: 'Saved weekday targets' })).toBeInTheDocument()
+    await act(async () => {
+      releaseActive(Response.json(service.active))
+      releaseHistory(Response.json(service.history))
+      await Promise.all([pendingActive, pendingHistory])
+    })
+    await waitFor(() => expect(screen.queryByText('Loading saved plan history…')).not.toBeInTheDocument())
+    expect(screen.getByRole('region', { name: 'Version 1 saved targets' })).toHaveTextContent('Monday')
+  })
+
+  it('makes ending unavailable while a failed refresh leaves only cached plan content, and restores it after recovery', async () => {
+    const activeKey = ['nutrition', 'plans', 'active', 'user-a', 'session-a']
+    const { service, fetchMock } = mockPlanService({ revision: 1, plan: savedPlan })
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const user = userEvent.setup()
+    const { client } = renderPlans(null)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'End plan' })).toBeEnabled())
+    service.readActive = () => failure(503, 'Plan storage is not configured')
+    await act(async () => { void client.invalidateQueries({ queryKey: activeKey }); await Promise.resolve() })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'End plan' })).toBeDisabled())
+    expect(screen.getByRole('heading', { name: 'Saved plan unavailable' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Saved weekday targets' })).toBeInTheDocument()
+    expect(screen.getByText(/Ending this plan needs a confirmed active revision/)).toBeVisible()
+    expect(screen.getByRole('button', { name: 'End plan' })).toHaveAccessibleDescription(/Ending this plan needs a confirmed active revision/)
+    expect(screen.getByRole('button', { name: 'Edit weekdays' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'New calculation' })).toBeEnabled()
+    await user.click(screen.getByRole('button', { name: 'End plan' }))
+    expect(confirmSpy).not.toHaveBeenCalled()
+    expect(callsTo(fetchMock, '/api/nutrition/v1/plans/active/end')).toHaveLength(0)
+    expect(screen.queryByText(/Nutrition plan ended/)).not.toBeInTheDocument()
+    service.readActive = undefined
+    await act(async () => { void client.invalidateQueries({ queryKey: activeKey }); await Promise.resolve() })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'End plan' })).toBeEnabled())
+    expect(screen.queryByText(/Ending this plan needs a confirmed active revision/)).not.toBeInTheDocument()
+  })
+
+  it('does not report a changed saved-plan status or block saving while the active read is only refetching', async () => {
+    let release!: (response: Response) => void
+    const pending = new Promise<Response>((resolve) => { release = resolve })
+    const { service } = mockPlanService()
+    const user = userEvent.setup()
+    const { client } = renderPlans()
+    await reviewedFlat()
+    await confirmZone(user)
+    expect(screen.getByRole('button', { name: 'Save new plan' })).toBeEnabled()
+    service.readActive = () => pending
+    await act(async () => { void client.invalidateQueries({ queryKey: ['nutrition', 'plans', 'active', 'user-a', 'session-a'] }); await Promise.resolve() })
+    await waitFor(() => expect(screen.getByText('Loading saved plan and revision…')).toBeInTheDocument())
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Saved-plan status and revision must load before saving/)).not.toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: /I confirm this IANA calendar time zone/ })).toBeChecked()
+    expect(screen.getByRole('button', { name: 'Save new plan' })).toBeEnabled()
+    await act(async () => { release(Response.json(service.active)); await pending })
+    await waitFor(() => expect(screen.queryByText('Loading saved plan and revision…')).not.toBeInTheDocument())
+    expect(screen.getByRole('button', { name: 'Save new plan' })).toBeEnabled()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('keeps the accepted preview, weekday draft and confirmed zone when a starting-options refresh fails', async () => {
+    let optionsAttempt = 0
+    const { service, planFetch } = mockWorkspace()
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit): Promise<Response> => {
+      if (url === '/api/nutrition/v1/estimates/options') {
+        optionsAttempt += 1
+        return optionsAttempt === 1 ? Response.json(optionsFixture) : failure(503, 'Starting suggestions are unavailable', 'options-id')
+      }
+      if (url === '/api/nutrition/v1/estimates/preview' && init?.method === 'POST') return Response.json(manualPreview)
+      return planFetch(url, init)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    service.save = (body) => {
+      expect(body.expected_revision).toBe(0)
+      expect(body.accepted_preview).toEqual(manualPreview)
+      expect(body.weekday_kcal).toEqual([2600, 2400, 2400, 2400, 2400, 2400, 2200])
+      expect(body.time_zone).toBe('Europe/Berlin')
+      service.active = { revision: 1, plan: savedPlan }
+      service.history = { revision: 1, plans: [savedPlan], next_before_version: null }
+      return Response.json(service.active, { status: 201 })
+    }
+    const user = userEvent.setup()
+    const { client } = renderWorkspace()
+    await fillNewManual(user)
+    await user.click(screen.getByRole('button', { name: 'Preview daily targets' }))
+    await user.click(await screen.findByRole('button', { name: 'Next: Weekday targets' }))
+    const monday = screen.getByRole('spinbutton', { name: 'Monday (kcal)' })
+    await user.clear(monday)
+    await user.type(monday, '2600')
+    const sunday = screen.getByRole('spinbutton', { name: 'Sunday (kcal)' })
+    await user.clear(sunday)
+    await user.type(sunday, '2200')
+    const next = await screen.findByRole('button', { name: 'Next: Review and save' })
+    await waitFor(() => expect(next).toBeEnabled())
+    await user.click(next)
+    await screen.findByRole('region', { name: 'Provisional weekday targets' })
+    await confirmZone(user, 'Europe/Berlin')
+    await user.click(screen.getByRole('checkbox', { name: /I have reviewed the server's day-level reasons/ }))
+    await act(async () => { await client.invalidateQueries({ queryKey: ['nutrition', 'options', 'user-a', 'session-a'] }) })
+    expect(await screen.findByText('Request ID: options-id')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Provisional weekday targets' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Plan calendar time zone (IANA)' })).toHaveValue('Europe/Berlin')
+    expect(screen.getByRole('checkbox', { name: /I confirm this IANA calendar time zone/ })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: /I have reviewed the server's day-level reasons/ })).toBeChecked()
+    await user.click(screen.getByRole('button', { name: 'Save new plan' }))
+    expect(await screen.findByText(/Nutrition plan version 1 saved/)).toBeInTheDocument()
+    expect(callsTo(planFetch, '/api/nutrition/v1/plans')).toHaveLength(1)
   })
 })

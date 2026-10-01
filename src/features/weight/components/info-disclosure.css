@@ -1,0 +1,6 @@
+.info-toggle { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding-inline: 10px; border-radius: 8px; color: var(--ep-semantic-text-secondary); font-size: .8125rem; font-weight: 600; }
+.info-toggle:hover { background: var(--ep-semantic-surface-hover); color: var(--ep-semantic-text-primary); }
+.info-toggle[aria-expanded=true] { background: var(--ep-semantic-selected); color: var(--ep-semantic-selected-foreground); }
+.info-toggle:focus-visible { outline-offset: 2px; }
+.info-panel { padding: 12px 14px; border-radius: 12px; background: var(--ep-semantic-surface-raised); color: var(--ep-semantic-text-secondary); font-size: .8125rem; line-height: 1.6; }
+.info-panel ul { display: grid; gap: 8px; padding-left: 1.1rem; list-style: disc; }

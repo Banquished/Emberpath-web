@@ -1,13 +1,12 @@
 @layer components {
   .paginated-history { min-width: 0; }
-  .paginated-history .history-heading { padding-block: 20px; }
   .history-order { margin-top: 3px; color: var(--ep-semantic-text-secondary); font-size: .75rem; }
   .history-page-size { display: flex; align-items: center; gap: 10px; color: var(--ep-semantic-text-secondary); font-size: .8125rem; }
   .history-page-size select { min-width: 70px; min-height: 44px; padding: 8px; border: 1px solid var(--ep-semantic-border-control); border-radius: 8px; background: var(--ep-semantic-background); color: var(--ep-semantic-text-primary); }
   .history-scroll { height: clamp(260px, 50svh, 440px); overflow: auto; scrollbar-gutter: stable; }
   .history-scroll:focus-visible { outline-offset: -3px; }
   .history-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: .875rem; }
-  .history-table th, .history-table td { padding: 8px 28px; text-align: left; border-bottom: 1px solid var(--ep-semantic-border-subtle); }
+  .history-table th, .history-table td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--ep-semantic-border-subtle); }
   .history-table thead th { position: sticky; top: 0; z-index: 1; padding-block: 12px; background: var(--ep-semantic-surface); color: var(--ep-semantic-text-secondary); font-size: .75rem; font-weight: 500; }
   .history-table tbody th { color: var(--ep-semantic-text-secondary); font-weight: 400; }
   .history-table tbody tr:last-child > * { border-bottom: 0; }
@@ -18,7 +17,7 @@
   .history-actions summary { min-height: 44px; padding: 10px 8px; border-radius: 6px; cursor: pointer; font-size: .8125rem; }
   .history-actions summary:hover { background: var(--ep-semantic-surface-hover); }
   .history-action-buttons { display: flex; flex-direction: column; gap: 6px; padding-block: 4px; }
-  .history-pagination { justify-content: space-between; flex-wrap: wrap; padding: 14px 28px; }
+  .history-pagination { justify-content: space-between; flex-wrap: wrap; padding: 12px 0 0; }
   .history-pagination nav { display: flex; align-items: center; gap: 12px; }
   .history-pagination nav > span { white-space: nowrap; font-variant-numeric: tabular-nums; }
   .history-period-empty { height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 28px; }
@@ -28,10 +27,12 @@
 }
 
 @media (max-width: 640px) {
-  .history-table th, .history-table td { padding-inline: 12px; }
   .history-table { font-size: .8125rem; }
   .history-table .history-actions-column { padding-left: 0; }
-  .history-pagination { padding: 14px 16px; gap: 12px; }
+  .history-pagination { gap: 12px; }
   .history-pagination nav { width: 100%; justify-content: space-between; }
   .history-page-size { gap: 6px; }
 }
+
+/* Unlayered so it also replaces the unlayered phone padding in styles.css. */
+.paginated-history .history-heading { padding: 0 0 8px; border-bottom: 0; }

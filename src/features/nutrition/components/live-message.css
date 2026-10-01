@@ -1,0 +1,3 @@
+/* The announcement region stays mounted so a later message is actually announced. While it has no message it
+   must not occupy layout, including the spacing that a space-y container applies to its children. */
+.live-message:empty { margin: 0; padding: 0; border-width: 0; }

@@ -1,39 +1,48 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { useIsMutating } from '@tanstack/react-query'
 import type { WeightGoal } from '@/entities/weight-goal'
 import { useActiveWeightGoal, useEndWeightGoal, useSaveWeightGoal } from '../api/weight-goals'
 import { dateKey } from '../weight-range'
+import { InfoDisclosure } from './info-disclosure'
 
 const dateFormatter = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 const formatDate = (date: string) => dateFormatter.format(new Date(`${date}T12:00:00`))
 const paceFormatter = new Intl.NumberFormat('en-GB', { maximumFractionDigits: 2, signDisplay: 'exceptZero' })
+const endMessages = { completed: 'Goal completed.', cancelled: 'Goal cancelled.' } as const
 
-function GoalSummary({ goal }: { goal: WeightGoal | null }) {
-  if (!goal) return <p>No active goal. Add a target when it feels right for you.</p>
-
-  const targetDate = goal.target_date ? `Target date ${formatDate(goal.target_date)}` : 'No target date'
-  return <p>
-    <strong>{goal.target_weight_kg} kg</strong>
-    <span>Since {formatDate(goal.start_date)} {'\u00b7'} {targetDate}</span>
-  </p>
+function GoalPace({ goal }: { goal: WeightGoal }) {
+  if (!goal.target_date) return null
+  return <div className="goal-pace">
+    <InfoDisclosure label="About the planned pace">
+      {goal.plan
+        ? <p>Planned pace: {paceFormatter.format(goal.plan.weekly_change_kg)} kg/week ({paceFormatter.format(goal.plan.fortnightly_change_kg)} kg/fortnight), from {goal.baseline_weight_kg} kg over {goal.plan.duration_days} days. This is your chosen plan, not a prediction.</p>
+        : <p>Change your goal to set its starting weight and show a planned pace.</p>}
+    </InfoDisclosure>
+  </div>
 }
 
-function GoalPace({ goal }: { goal: WeightGoal | null | undefined }) {
-  if (!goal) return null
-  if (!goal.plan) {
-    return goal.target_date && <p className="chart-help">Change your goal to set its starting weight and show a planned pace.</p>
-  }
+type EndStatus = keyof typeof endMessages
 
-  const weeklyPace = paceFormatter.format(goal.plan.weekly_change_kg)
-  const fortnightlyPace = paceFormatter.format(goal.plan.fortnightly_change_kg)
-  return <p className="chart-help">
-    Planned pace: {weeklyPace} kg/week ({fortnightlyPace} kg/fortnight), from {goal.baseline_weight_kg} kg over {goal.plan.duration_days} days. This is your chosen plan, not a prediction.
-  </p>
+function GoalEndSection({ busy, pending, error, onEnd }: { busy: boolean; pending?: EndStatus; error?: string; onEnd: (status: EndStatus) => void }) {
+  return (
+    <section className="goal-end" aria-labelledby="goal-end-title">
+      <h3 id="goal-end-title">Finish this goal</h3>
+      <p>Reaching your target does not complete a goal automatically. Completing or cancelling removes it from the chart and keeps it in your goal history.</p>
+      <div className="entry-actions">
+        <button className="secondary-button" type="button" disabled={busy} onClick={() => onEnd('completed')}>{pending === 'completed' ? 'Completing...' : 'Mark completed'}</button>
+        <button className="secondary-button" type="button" disabled={busy} onClick={() => onEnd('cancelled')}>{pending === 'cancelled' ? 'Cancelling...' : 'Cancel goal'}</button>
+      </div>
+      {error && <p className="form-error" role="alert">{error}</p>}
+    </section>
+  )
 }
 
-function GoalDialog({ goal, onClose, onSaved }: { goal: WeightGoal | null; onClose: () => void; onSaved: () => void }) {
+function GoalDialog({ goal, onClose, onDone }: { goal: WeightGoal | null; onClose: () => void; onDone: (message: string) => void }) {
   const dialog = useRef<HTMLDialogElement>(null)
   const save = useSaveWeightGoal()
+  const end = useEndWeightGoal()
+  const busy = useIsMutating({ mutationKey: ['weight-goals'] }) > 0
   const [weight, setWeight] = useState(goal ? String(goal.target_weight_kg) : '')
   const [start, setStart] = useState(goal?.start_date ?? dateKey(new Date()))
   const [target, setTarget] = useState(goal?.target_date ?? '')
@@ -52,17 +61,24 @@ function GoalDialog({ goal, onClose, onSaved }: { goal: WeightGoal | null; onClo
   }, [])
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    save.mutate({ target_weight_kg: Number(weight), start_date: start, target_date: target || null, baseline_weight_kg: baseline ? Number(baseline) : null }, { onSuccess: onSaved })
+    end.reset()
+    save.mutate({ target_weight_kg: Number(weight), start_date: start, target_date: target || null, baseline_weight_kg: baseline ? Number(baseline) : null }, { onSuccess: () => onDone('Goal saved.') })
+  }
+  function endGoal(status: EndStatus) {
+    if (!goal || !window.confirm(status === 'completed' ? 'Mark this weight goal as completed? It will leave the chart. Your previous goal will be saved.' : 'Cancel this weight goal? It will leave the chart. Your previous goal will be saved.')) return
+    save.reset()
+    end.mutate({ id: goal.id, status }, { onSuccess: () => onDone(endMessages[status]) })
   }
   return (
-    <dialog ref={dialog} className="weight-dialog" aria-labelledby="goal-editor-title" onCancel={(event) => { event.preventDefault(); if (!save.isPending) onClose() }}>
+    <dialog ref={dialog} className="weight-dialog" aria-labelledby="goal-editor-title" onCancel={(event) => { event.preventDefault(); if (!busy) onClose() }}>
       <section className="weight-entry">
         <div className="entry-heading">
-          <h2 id="goal-editor-title">{goal ? 'Change weight goal' : 'Set weight goal'}</h2>
+          <h2 id="goal-editor-title">{goal ? 'Manage weight goal' : 'Set weight goal'}</h2>
           <p>{goal ? 'Saving a changed goal replaces your current goal and preserves its history.' : 'Choose your own target, with an optional date.'}</p>
+          {goal && <GoalPace goal={goal} />}
         </div>
         <form onSubmit={submit}>
-          <fieldset disabled={save.isPending} className="entry-fields goal-fields">
+          <fieldset disabled={busy} className="entry-fields goal-fields">
             <legend className="sr-only">Goal details</legend>
             <div className="form-field">
               <label htmlFor="goal-weight">Target weight (kg)</label>
@@ -83,60 +99,39 @@ function GoalDialog({ goal, onClose, onSaved }: { goal: WeightGoal | null; onClo
             <p id="goal-baseline-help" className="goal-form-help">{baselineHelp} If no starting measurement exists, enter a starting weight for a dated goal. This starting point stays fixed as you log measurements.</p>
             <div className="entry-actions">
               <button className="log-button" type="submit">{save.isPending ? 'Saving...' : 'Save goal'}</button>
-              <button className="secondary-button" type="button" onClick={onClose}>Cancel</button>
+              <button className="secondary-button" type="button" onClick={onClose}>Close</button>
             </div>
           </fieldset>
           {save.error && <p className="form-error" role="alert">{save.error.message}</p>}
         </form>
+        {goal && <GoalEndSection busy={busy} pending={end.isPending ? end.variables?.status : undefined} error={end.error?.message} onEnd={endGoal} />}
       </section>
     </dialog>
   )
 }
 
-export function WeightGoalPanel() {
+export function WeightGoalTile() {
   const query = useActiveWeightGoal()
-  const end = useEndWeightGoal()
-  const busy = useIsMutating({ mutationKey: ['weight-goals'] }) > 0
-  const [editing, setEditing] = useState(false)
+  const [open, setOpen] = useState(false)
   const [message, setMessage] = useState('')
-  const goal = query.data
-  function endGoal(status: 'completed' | 'cancelled') {
-    if (!goal || !window.confirm(status === 'completed' ? 'Mark this weight goal as completed? It will leave the chart. Your previous goal will be saved.' : 'Cancel this weight goal? It will leave the chart. Your previous goal will be saved.')) return
-    setMessage('')
-    end.mutate({ id: goal.id, status }, { onSuccess: () => setMessage(status === 'completed' ? 'Goal completed.' : 'Goal cancelled.') })
-  }
+  const goal = query.data ?? null
   return (
-    <section className="weight-goal-panel" aria-labelledby="goal-title">
-      <div className="goal-heading">
-        <div>
-          <h2 id="goal-title">Your weight goal</h2>
-          {query.isPending && <p role="status">Loading goal...</p>}
-          {query.isSuccess && <GoalSummary goal={goal ?? null} />}
-        </div>
-        {query.isSuccess && (
-          <div className="goal-actions">
-            <button className="secondary-button" disabled={busy} onClick={() => { setEditing(true); setMessage(''); end.reset() }}>
-              {goal ? 'Change goal' : 'Set goal'}
-            </button>
-            {goal && (
-              <>
-                <button className="secondary-button" disabled={busy} onClick={() => endGoal('completed')}>Mark completed</button>
-                <button className="secondary-button" disabled={busy} onClick={() => endGoal('cancelled')}>Cancel goal</button>
-              </>
-            )}
-          </div>
-        )}
-      </div>
-      <GoalPace goal={goal} />
-      {query.isError && (
-        <div>
-          <p className="form-error" role="alert">Could not load your goal. {query.error.message}</p>
-          <button className="secondary-button" disabled={query.isFetching} onClick={() => void query.refetch()}>Retry goal</button>
-        </div>
-      )}
-      {end.error && <p className="form-error" role="alert">{end.error.message}</p>}
-      <p role="status">{message}</p>
-      {editing && <GoalDialog goal={goal ?? null} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); setMessage('Goal saved.') }} />}
-    </section>
+    <div className="weight-goal-tile">
+      <dt>Weight goal</dt>
+      <dd>
+        {query.isPending && <span role="status">Loading goal…</span>}
+        {query.isSuccess && <div className="goal-tile-body">
+          <span className={goal ? 'goal-tile-value' : 'goal-tile-value goal-tile-empty'}>{goal ? `${goal.target_weight_kg} kg` : 'Not set'}</span>
+          <span className="goal-tile-note">{goal ? (goal.target_date ? `By ${formatDate(goal.target_date)}` : 'No target date') : 'Add a target when it feels right for you'}</span>
+          <button className="goal-tile-action" type="button" onClick={() => { setMessage(''); setOpen(true) }}>{goal ? 'Manage goal' : 'Set goal'}</button>
+        </div>}
+        {query.isError && <>
+          <span role="alert">Could not load your goal. {query.error.message}</span>
+          <button className="secondary-button" type="button" disabled={query.isFetching} onClick={() => void query.refetch()}>Retry goal</button>
+        </>}
+        <span className="goal-tile-status" role="status">{message}</span>
+      </dd>
+      {open && createPortal(<GoalDialog goal={goal} onClose={() => setOpen(false)} onDone={(text) => { setOpen(false); setMessage(text) }} />, document.body)}
+    </div>
   )
 }

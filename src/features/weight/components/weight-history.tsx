@@ -1,9 +1,11 @@
 import { useId, useState } from 'react'
 import type { WeightLog } from '@/entities/weight-log'
+import type { Period } from '../weight-range'
 import './weight-history.css'
 
 interface WeightHistoryProps {
   entries: WeightLog[]
+  period: Period
   busy: boolean
   onEdit: (entry: WeightLog) => void
   onDelete: (entry: WeightLog) => void
@@ -12,22 +14,30 @@ interface WeightHistoryProps {
 const dateFormatter = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 const weightFormatter = new Intl.NumberFormat('en-GB', { maximumFractionDigits: 2 })
 
-export function WeightHistory({ entries, busy, onEdit, onDelete }: WeightHistoryProps) {
+export function WeightHistory({ entries, period, busy, onEdit, onDelete }: WeightHistoryProps) {
   const headingId = useId()
   const [pageSize, setPageSize] = useState(10)
   const [requestedPage, setRequestedPage] = useState(1)
+  const [lastPeriod, setLastPeriod] = useState(period)
+  // A new period starts again at the first page, but the chosen rows per page is a preference that stays.
+  const periodChanged = period !== lastPeriod
   const pageCount = Math.max(1, Math.ceil(entries.length / pageSize))
-  const page = Math.min(requestedPage, pageCount)
+  const page = Math.min(periodChanged ? 1 : requestedPage, pageCount)
   const start = (page - 1) * pageSize
   const visibleEntries = entries.slice(start, start + pageSize)
 
-  if (requestedPage !== page) setRequestedPage(page)
+  if (periodChanged) {
+    setLastPeriod(period)
+    setRequestedPage(1)
+  } else if (requestedPage !== page) {
+    setRequestedPage(page)
+  }
 
   return (
-    <section className="weight-history paginated-history" aria-labelledby={headingId}>
+    <section className="paginated-history" aria-labelledby={headingId}>
       <header className="history-heading">
         <div>
-          <h2 id={headingId}>Weight history</h2>
+          <h2 id={headingId} className="sr-only">Weight history</h2>
           <p className="history-order">Most recent first</p>
         </div>
         <label className="history-page-size">
@@ -43,7 +53,7 @@ export function WeightHistory({ entries, busy, onEdit, onDelete }: WeightHistory
         </label>
       </header>
 
-      <div key={`${page}-${pageSize}`} className="history-scroll" role="region" aria-label="Weight measurements" tabIndex={0}>
+      <div key={`${period}-${page}-${pageSize}`} className="history-scroll" role="region" aria-label="Weight measurements" tabIndex={0}>
         {entries.length === 0 ? (
           <div className="history-period-empty">
             <h3>No measurements in this period</h3>
